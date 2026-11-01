@@ -170,7 +170,8 @@ footer .wrap div:last-child{margin-left:auto;display:flex;gap:20px}
     <div class="term"><span class="p">$</span><b>git clone https://github.com/bhxuk/Plex_burner &amp;&amp; cd Plex_burner &amp;&amp; cp .env.example .env &amp;&amp; docker compose up -d</b>
       <button class="copy" data-copy="git clone https://github.com/bhxuk/Plex_burner && cd Plex_burner && cp .env.example .env && docker compose up -d" title="Copy" style="position:static"></button></div>
     <div class="shot reveal">
-      <div class="window"><div class="bar"><i></i><i></i><i></i><span>your-server:9000</span></div><img src="img/disc.png" alt="Plex Burner copying a DVD on one drive while a second drive shows preview frames of the next disc" width="2160" height="1440"></div>
+      <div class="window"><div class="bar"><i></i><i></i><i></i><span>your-server:9000</span></div><img src="img/tv-disc.png" alt="Plex Burner copying a TV series DVD episode by episode, with preview frames read from the disc, progress, speed and time left" width="1589" height="924"></div>
+      <p style="color:var(--dim);font-size:13px;margin:14px 0 0">A real TV series DVD being copied, one file per episode. Picture blurred for this page.</p>
     </div>
   </div>
 </header>
@@ -186,7 +187,7 @@ footer .wrap div:last-child{margin-left:auto;display:flex;gap:20px}
         <ul><li>movie DVDs and home videos</li><li>DVD recorder and camcorder discs</li></ul></div>
       <div class="feat reveal"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg></div>
         <h3>Playable files</h3><p>Saves the main film as MKV at original quality with every audio track and subtitle, or as MP4 that plays on anything.</p>
-        <ul><li>full disc backup if you want menus</li><li>one folder per film, ready for Plex</li></ul></div>
+        <ul><li>TV seasons split into episodes</li><li>one folder per film, ready for Plex</li></ul></div>
       <div class="feat reveal"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/></svg></div>
         <h3>See what you're copying</h3><p>Preview frames straight from the disc before you copy, a live picture while it copies, and frames for everything in your library.</p>
         <ul><li>no guessing which disc is which</li><li>cached, fast to browse</li></ul></div>
@@ -212,17 +213,18 @@ footer .wrap div:last-child{margin-left:auto;display:flex;gap:20px}
 <section id="tour" style="padding-top:20px">
   <div class="wrap">
     <div class="kicker">// tour</div><h2>Take the tour.</h2>
-    <p class="sub">Five tabs, refreshing live. Or <a href="demo/" target="_blank" rel="noopener">open the interactive demo</a> and click around yourself.</p>
+    <p class="sub">Five tabs, refreshing live. TV discs are split into episodes and named for your media server automatically. Or <a href="demo/" target="_blank" rel="noopener">open the interactive demo</a> and click around yourself.</p>
     <div class="gallery">
       <div class="gtabs" id="gtabs">
-        <button class="gtab active" data-img="disc" data-url="#disc"><b>Disc</b><span>Every drive, previews and progress</span></button>
+        <button class="gtab active" data-img="tv-disc" data-url="#disc"><b>TV series</b><span>A real season, episode by episode</span></button>
+        <button class="gtab" data-img="disc" data-url="#disc"><b>Two drives</b><span>Copying and ready at the same time</span></button>
         <button class="gtab" data-img="library" data-url="#library"><b>Library</b><span>Everything you've copied</span></button>
         <button class="gtab" data-img="details" data-url="#library"><b>Film details</b><span>Frames from the file</span></button>
         <button class="gtab" data-img="locations" data-url="#locations"><b>Locations</b><span>Where copies are saved</span></button>
         <button class="gtab" data-img="settings" data-url="#settings"><b>Settings</b><span>Format, auto-start and eject</span></button>
         <button class="gtab" data-img="updates" data-url="#updates"><b>Updates</b><span>One-click updates</span></button>
       </div>
-      <div class="gview"><div class="window"><div class="bar"><i></i><i></i><i></i><span id="gurl">your-server:9000/#disc</span></div><img id="gimg" src="img/disc.png" alt="Plex Burner screenshot" width="2160" height="1440"></div></div>
+      <div class="gview"><div class="window"><div class="bar"><i></i><i></i><i></i><span id="gurl">your-server:9000/#disc</span></div><img id="gimg" src="img/tv-disc.png" alt="Plex Burner screenshot"></div></div>
     </div>
     <div class="stack"><span>Docker</span><span>Python</span><span>ffmpeg</span><span>libdvdcss</span><span>no-build frontend</span><span>works offline on your LAN</span></div>
   </div>
@@ -325,7 +327,7 @@ document.getElementById("gtabs").addEventListener("click", e => {
   const img = document.getElementById("gimg"); img.style.opacity = 0;
   setTimeout(() => { img.src = `img/${t.dataset.img}.png`; document.getElementById("gurl").textContent = `your-server:9000/${t.dataset.url}`; img.onload = () => img.style.opacity = 1; }, 150);
 });
-["library", "details", "locations", "settings", "updates"].forEach(n => { const i = new Image(); i.src = `img/${n}.png`; });
+["disc", "library", "details", "locations", "settings", "updates"].forEach(n => { const i = new Image(); i.src = `img/${n}.png`; });
 const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .12 });
 document.querySelectorAll(".reveal").forEach(el => io.observe(el));
 

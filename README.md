@@ -13,7 +13,9 @@ next one. Works with Plex, Jellyfin, Emby, Kodi and VLC, with as many drives as 
 [Install](#install) ·
 [Changelog](CHANGELOG.md)
 
-![Plex Burner copying a DVD](docs/img/disc.png)
+![Plex Burner copying a TV series DVD episode by episode](docs/img/tv-disc.png)
+
+<sub>A real TV series DVD being copied, one file per episode (picture blurred).</sub>
 
 </div>
 
@@ -29,6 +31,8 @@ next one. Works with Plex, Jellyfin, Emby, Kodi and VLC, with as many drives as 
 
 **What gets saved**
 
+- **TV series DVDs:** one file per episode, filed as `Show/Season 11/Show - S11E01.mkv`. Duplicate and "play all"
+  titles are skipped, and you can set the show, season and first episode number.
 - **Movie DVDs:** the main film as **MKV** at original quality with every audio track and subtitle, or as **MP4**
   (H.264 and AAC) that plays on anything. A full disc backup with menus is also available.
 - **Home video discs** from DVD recorders and camcorders: their videos are converted to MKV or MP4.
@@ -40,12 +44,15 @@ which is the layout Plex, Jellyfin and Emby expect.
 **Several drives:** every DVD drive is found automatically, including USB drives plugged in later, and each one
 copies in parallel.
 
+**Failed copies are kept:** if a copy fails, what was copied is kept in a hidden `.failed` folder and listed on the Disc
+tab with Retry, Keep files and Delete.
+
 <table><tr>
+<td><img src="docs/img/disc.png" alt="Two drives at once"></td>
 <td><img src="docs/img/library.png" alt="Library"></td>
-<td><img src="docs/img/details.png" alt="Film details"></td>
 </tr><tr>
+<td><img src="docs/img/details.png" alt="Film details"></td>
 <td><img src="docs/img/locations.png" alt="Locations"></td>
-<td><img src="docs/img/settings.png" alt="Settings"></td>
 </tr></table>
 
 ## Install
