@@ -9,6 +9,7 @@ Copy your DVDs into a Plex library, one disc at a time. Insert a disc, name it, 
 - Detects a disc in `/dev/sr0` and suggests a name from the disc title.
 - Waits for you to confirm or change the name, or starts by itself after `AUTO_START_SECONDS`.
 - Copies DVDs as a `VIDEO_TS` folder that Plex and VLC play directly. Data discs are saved as an `.iso`.
+- Lets you pick where discs are saved: browse folders on the server, create new ones, and see free space. Your choice is remembered.
 - Ejects the disc when the copy finishes.
 - Dashboard on port 9000 with a log, a one-click **Update now** button, and the changelog.
 
@@ -30,7 +31,10 @@ Set these as environment variables before running `scripts/update.sh`, or edit `
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `MEDIA_HOST_DIR` | `/home/bhxuk/data/media/movies` | Folder on the server where discs are saved. Point a Plex library at it. |
+| `MEDIA_ROOT` | `/home/bhxuk/data/media` | Media folder you can browse and save into from the dashboard. |
+| `EXTRA_ROOT` | `/mnt` | A second browsable folder, for extra drives or network shares. |
+| `DEFAULT_DEST` | `/home/bhxuk/data/media/movies` | Where discs go until you pick another folder. Point a Plex library at the folders you use. |
+| `PUID` / `PGID` | `1000` / `1000` | Owner given to copied files, so Plex and your user can manage them. |
 | `PB_HOST_DIR` | `/home/bhxuk/Plex_burner` | Where this repo is cloned on the server. The update button needs it. |
 | `AUTO_START_SECONDS` | `120` | Seconds to wait for a name before copying. `0` turns auto-start off. |
 

@@ -1,5 +1,6 @@
 .git
 docs
+config
 __pycache__
 *.pyc
 *.partial

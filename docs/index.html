@@ -138,6 +138,10 @@
           <div class="bar"><div></div></div>
           <div class="mock-input"><span>Heat (1995)</span><b>Copy disc</b></div>
         </div>
+        <div class="mock-card">
+          <div class="mock-row"><span class="mock-title">Save to</span><span class="mock-msg" style="margin:0">412 GB free</span></div>
+          <div class="mock-msg" style="margin:6px 0 0; font-family:ui-monospace,Consolas,monospace">/mnt/tavistock/Films</div>
+        </div>
         <div class="mock-log">21:38:40  Detected dvd disc, suggested name 'Heat'
 21:38:52  Copying 'Heat (1995)' (dvd)
 21:52:10  Saved to /media/Heat (1995)
@@ -152,8 +156,9 @@
     <div class="grid">
       <div class="card"><span class="num">1</span><h3>Insert a disc</h3><p>Plex Burner watches the drive and reads the disc title as soon as it's loaded.</p></div>
       <div class="card"><span class="num">2</span><h3>Name it</h3><p>The title is pre-filled. Type the movie name and year, or leave it and it starts on its own after two minutes.</p></div>
-      <div class="card"><span class="num">3</span><h3>Copy</h3><p>DVDs are saved as a <code>VIDEO_TS</code> folder that Plex and VLC play directly. Data discs are saved as an ISO.</p></div>
-      <div class="card"><span class="num">4</span><h3>Eject and repeat</h3><p>The tray opens when the copy is done, ready for the next disc in your collection.</p></div>
+      <div class="card"><span class="num">3</span><h3>Pick where it goes</h3><p>Browse folders on your server, create new ones, and see how much space is left. Your choice is remembered.</p></div>
+      <div class="card"><span class="num">4</span><h3>Copy</h3><p>DVDs are saved as a <code>VIDEO_TS</code> folder that Plex and VLC play directly. Data discs are saved as an ISO.</p></div>
+      <div class="card"><span class="num">5</span><h3>Eject and repeat</h3><p>The tray opens when the copy is done, ready for the next disc in your collection.</p></div>
     </div>
   </section>
 
@@ -185,7 +190,9 @@ http://&lt;server-ip&gt;:9000</pre>
         <p style="margin-bottom:10px">Set these before step 2 if your folders differ from the defaults.</p>
         <table>
           <tr><th>Variable</th><th>Default</th></tr>
-          <tr><td><code>MEDIA_HOST_DIR</code></td><td><code>/home/bhxuk/data/media/movies</code></td></tr>
+          <tr><td><code>MEDIA_ROOT</code></td><td><code>/home/bhxuk/data/media</code></td></tr>
+          <tr><td><code>EXTRA_ROOT</code></td><td><code>/mnt</code></td></tr>
+          <tr><td><code>DEFAULT_DEST</code></td><td><code>/home/bhxuk/data/media/movies</code></td></tr>
           <tr><td><code>PB_HOST_DIR</code></td><td><code>/home/bhxuk/Plex_burner</code></td></tr>
           <tr><td><code>AUTO_START_SECONDS</code></td><td><code>120</code> (0 turns it off)</td></tr>
         </table>

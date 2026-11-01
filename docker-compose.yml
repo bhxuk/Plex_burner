@@ -15,14 +15,27 @@ services:
       - /dev/sr0:/dev/sr0
     environment:
       APP_COMMIT: ${APP_COMMIT:-unknown}
-      MEDIA_DIR: /media
       DISC_DEVICE: /dev/sr0
+      # Folders you can pick in the dashboard. Each must also be mounted below at the same path.
+      DEST_ROOTS: ${MEDIA_ROOT:-/home/bhxuk/data/media},${EXTRA_ROOT:-/mnt}
+      # Where discs go until you pick another folder in the dashboard.
+      DEFAULT_DEST: ${DEFAULT_DEST:-/home/bhxuk/data/media/movies}
+      # Owner of copied files, so Plex and your user can manage them.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       AUTO_START_SECONDS: ${AUTO_START_SECONDS:-120}
       GITHUB_REPO: bhxuk/Plex_burner
       PB_HOST_DIR: ${PB_HOST_DIR:-/home/bhxuk/Plex_burner}
       PB_IMAGE: plex-burner:latest
     volumes:
-      # Where copied discs are saved. Plex should point a library at this folder.
-      - ${MEDIA_HOST_DIR:-/home/bhxuk/data/media/movies}:/media
+      - ${MEDIA_ROOT:-/home/bhxuk/data/media}:${MEDIA_ROOT:-/home/bhxuk/data/media}
+      # rslave lets network shares mounted later under /mnt show up without a restart.
+      - type: bind
+        source: ${EXTRA_ROOT:-/mnt}
+        target: ${EXTRA_ROOT:-/mnt}
+        bind:
+          propagation: rslave
+      # Remembers the folder you picked.
+      - ./config:/config
       # Lets the Update button rebuild the container.
       - /var/run/docker.sock:/var/run/docker.sock

@@ -53,15 +53,16 @@
   <div class="steps">
     <div class="card"><b>1. Insert a disc</b>Plex Burner detects it and reads the title.</div>
     <div class="card"><b>2. Name it</b>The title is pre-filled. Change it, or wait and it starts on its own.</div>
-    <div class="card"><b>3. Copy</b>DVDs become a folder Plex plays directly. Data discs become an ISO.</div>
-    <div class="card"><b>4. Eject</b>The disc pops out when it's done, ready for the next one.</div>
+    <div class="card"><b>3. Pick a folder</b>Choose where it's saved, or create a new folder. Your choice is remembered.</div>
+    <div class="card"><b>4. Copy</b>DVDs become a folder Plex plays directly. Data discs become an ISO.</div>
+    <div class="card"><b>5. Eject</b>The disc pops out when it's done, ready for the next one.</div>
   </div>
 
   <h2>Install with Docker</h2>
   <pre><code>git clone https://github.com/bhxuk/Plex_burner
 cd Plex_burner
 sh scripts/update.sh</code></pre>
-  <p class="muted">Then open <code>http://&lt;server-ip&gt;:9000</code>. Set <code>MEDIA_HOST_DIR</code> and <code>PB_HOST_DIR</code> if your folders differ from the defaults in <code>docker-compose.yml</code>.</p>
+  <p class="muted">Then open <code>http://&lt;server-ip&gt;:9000</code>. Set <code>MEDIA_ROOT</code>, <code>EXTRA_ROOT</code> and <code>PB_HOST_DIR</code> if your folders differ from the defaults in <code>docker-compose.yml</code>.</p>
 
   <h2>Updates</h2>
   <p>The dashboard checks GitHub for new commits. The <b>Update now</b> button pulls the latest code and rebuilds the container, and the changelog shows what changed.</p>

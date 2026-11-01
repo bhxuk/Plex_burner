@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+- Choose where discs are saved: browse folders on the server, create new folders, and see free space before you copy.
+- The chosen folder is remembered across restarts and updates.
+- Copied files are owned by your server user instead of root.
+- Network shares mounted under /mnt show up without restarting the app.
+
 ## 1.1.0
 - Added a project website on GitHub Pages with install steps, a dashboard preview and a link to open your own dashboard.
 - Added a README.

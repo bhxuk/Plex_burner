@@ -15,7 +15,12 @@ from flask import Flask, jsonify, render_template, request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DISC_DEVICE = os.environ.get("DISC_DEVICE", "/dev/sr0")
-MEDIA_DIR = os.environ.get("MEDIA_DIR", "/media")
+# Folders the dashboard may save to. They are mounted at the same path inside the container.
+DEST_ROOTS = [os.path.realpath(p.strip()) for p in os.environ.get("DEST_ROOTS", "/media").split(",") if p.strip()]
+DEFAULT_DEST = os.environ.get("DEFAULT_DEST", DEST_ROOTS[0])
+SETTINGS_FILE = os.environ.get("PB_SETTINGS", "/config/settings.json")
+PUID = os.environ.get("PUID", "1000")
+PGID = os.environ.get("PGID", "1000")
 AUTO_START_SECONDS = int(os.environ.get("AUTO_START_SECONDS", "120"))
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "bhxuk/Plex_burner")
 APP_COMMIT = os.environ.get("APP_COMMIT", "unknown")
@@ -40,8 +45,51 @@ state = {
     "name": "",
     "progress": 0,
     "pending_since": 0,
+    "destination": "",
     "log": [],
 }
+
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(settings):
+    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+    tmp = SETTINGS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+    os.replace(tmp, SETTINGS_FILE)
+
+
+def allowed_dir(path):
+    """True when path is an existing folder inside one of DEST_ROOTS."""
+    if not path:
+        return False
+    real = os.path.realpath(path)
+    inside = any(real == root or real.startswith(root + os.sep) for root in DEST_ROOTS)
+    return inside and os.path.isdir(real)
+
+
+def get_destination():
+    dest = load_settings().get("destination", DEFAULT_DEST)
+    return os.path.realpath(dest) if allowed_dir(dest) else os.path.realpath(DEFAULT_DEST)
+
+
+def free_bytes(path):
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return None
+
+
+def give_to_user(path):
+    """Copies run as root; hand them to the server user so Plex and you can manage them."""
+    run(["chown", "-R", f"{PUID}:{PGID}", path])
 
 
 def log(line):
@@ -130,8 +178,8 @@ def find_video_root(path):
     raise RuntimeError("dvdbackup finished but no VIDEO_TS folder was found.")
 
 
-def rip_dvd(name, total):
-    partial = os.path.join(MEDIA_DIR, f".partial-{name}")
+def rip_dvd(name, total, dest_dir):
+    partial = os.path.join(dest_dir, f".partial-{name}")
     os.makedirs(partial, exist_ok=True)
     with open(RIP_LOG, "w", encoding="utf-8") as logfile:
         proc = subprocess.Popen(
@@ -148,14 +196,14 @@ def rip_dvd(name, total):
             tail = logfile.read().strip().splitlines()[-3:]
         raise RuntimeError("dvdbackup failed: " + " | ".join(tail))
     source = find_video_root(partial)
-    dest = unique_path(os.path.join(MEDIA_DIR, name))
+    dest = unique_path(os.path.join(dest_dir, name))
     os.rename(source, dest)
     shutil.rmtree(partial, ignore_errors=True)
     return dest
 
 
-def rip_data(name, total):
-    dest = unique_path(os.path.join(MEDIA_DIR, f"{name}.iso"))
+def rip_data(name, total, dest_dir):
+    dest = unique_path(os.path.join(dest_dir, f"{name}.iso"))
     partial = dest + ".partial"
     with open(RIP_LOG, "w", encoding="utf-8") as logfile:
         proc = subprocess.Popen(
@@ -173,11 +221,15 @@ def rip_data(name, total):
     return dest
 
 
-def run_job(name, disc_type):
+def run_job(name, disc_type, dest_dir):
     total = disc_sectors() * 512
     try:
-        log(f"Copying '{name}' ({disc_type})")
-        dest = rip_dvd(name, total) if disc_type == "dvd" else rip_data(name, total)
+        log(f"Copying '{name}' ({disc_type}) to {dest_dir}")
+        if disc_type == "dvd":
+            dest = rip_dvd(name, total, dest_dir)
+        else:
+            dest = rip_data(name, total, dest_dir)
+        give_to_user(dest)
         log(f"Saved to {dest}")
         _, out = run(["eject", DISC_DEVICE])
         log(out or "Disc ejected")
@@ -187,13 +239,18 @@ def run_job(name, disc_type):
         set_state(status="error", message=str(exc))
 
 
-def start_job(name):
+def start_job(name, dest_dir=None):
+    dest_dir = dest_dir or get_destination()
+    if not allowed_dir(dest_dir):
+        return False, f"Can't save to {dest_dir}. Pick another folder."
+    dest_dir = os.path.realpath(dest_dir)
     with lock:
         if state["status"] not in ("waiting_name", "error") or not state["disc_type"]:
             return False, "No disc is waiting to be copied."
         disc_type = state["disc_type"]
-        state.update(status="ripping", name=name, progress=0, message=f"Copying '{name}'...")
-    threading.Thread(target=run_job, args=(name, disc_type), daemon=True).start()
+        state.update(status="ripping", name=name, progress=0, destination=dest_dir,
+                     message=f"Copying '{name}' to {dest_dir}...")
+    threading.Thread(target=run_job, args=(name, disc_type, dest_dir), daemon=True).start()
     return True, "Copy started."
 
 
@@ -304,17 +361,71 @@ def api_status():
         snapshot = {key: state[key] for key in ("status", "message", "disc_type", "suggested",
                                                  "name", "progress")}
         snapshot["log"] = list(state["log"][-80:])
+        ripping_to = state["destination"] if state["status"] == "ripping" else ""
+    snapshot["destination"] = ripping_to or get_destination()
+    snapshot["free_bytes"] = free_bytes(snapshot["destination"])
     snapshot["device"] = DISC_DEVICE
-    snapshot["media_dir"] = MEDIA_DIR
     snapshot["auto_start_seconds"] = AUTO_START_SECONDS
     return jsonify(snapshot)
 
 
 @app.post("/api/rip")
 def api_rip():
-    name = safe_name((request.get_json(silent=True) or {}).get("name", ""))
-    ok, message = start_job(name)
+    data = request.get_json(silent=True) or {}
+    ok, message = start_job(safe_name(data.get("name", "")), data.get("destination") or None)
     return jsonify({"ok": ok, "message": message}), (200 if ok else 409)
+
+
+@app.get("/api/folders")
+def api_folders():
+    path = request.args.get("path") or get_destination()
+    if not allowed_dir(path):
+        return jsonify({"ok": False, "message": f"{path} is not an allowed folder."}), 400
+    real = os.path.realpath(path)
+    try:
+        dirs = sorted((e.name for e in os.scandir(real) if e.is_dir() and not e.name.startswith(".")),
+                      key=str.lower)
+    except OSError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    parent = os.path.dirname(real)
+    return jsonify({
+        "ok": True,
+        "path": real,
+        "parent": parent if real not in DEST_ROOTS and allowed_dir(parent) else None,
+        "dirs": dirs,
+        "roots": DEST_ROOTS,
+        "free_bytes": free_bytes(real),
+    })
+
+
+@app.post("/api/folders")
+def api_folders_create():
+    data = request.get_json(silent=True) or {}
+    parent = data.get("path", "")
+    name = re.sub(r'[\\/:*?"<>|]', "", data.get("name", "")).strip().strip(".")
+    if not name or not allowed_dir(parent):
+        return jsonify({"ok": False, "message": "Enter a folder name inside an allowed folder."}), 400
+    path = os.path.join(os.path.realpath(parent), name)
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    give_to_user(path)
+    log(f"Created folder {path}")
+    return jsonify({"ok": True, "path": path})
+
+
+@app.post("/api/destination")
+def api_destination():
+    path = (request.get_json(silent=True) or {}).get("path", "")
+    if not allowed_dir(path):
+        return jsonify({"ok": False, "message": f"{path} is not an allowed folder."}), 400
+    real = os.path.realpath(path)
+    settings = load_settings()
+    settings["destination"] = real
+    save_settings(settings)
+    log(f"Discs will now be saved to {real}")
+    return jsonify({"ok": True, "path": real})
 
 
 @app.post("/api/eject")

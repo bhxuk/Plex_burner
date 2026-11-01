@@ -28,6 +28,15 @@
   button.primary { background:var(--accent); border-color:var(--accent); color:#111; font-weight:600; }
   button:disabled { opacity:.5; cursor:not-allowed; }
   pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px; max-height:260px; overflow:auto; font-size:13px; white-space:pre-wrap; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:13px; word-break:break-all; }
+  .warn { color:var(--bad); font-weight:600; }
+  .picker { border:1px solid var(--line); border-radius:8px; padding:12px; margin-top:10px; }
+  .picker ul { list-style:none; margin:8px 0; padding:0; max-height:240px; overflow:auto; border:1px solid var(--line); border-radius:6px; }
+  .picker li { padding:7px 10px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .picker li:last-child { border-bottom:0; }
+  .picker li:hover { background:var(--bg); }
+  .picker li.empty { color:var(--muted); cursor:default; }
+  select { padding:8px 10px; border-radius:6px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; max-width:100%; }
   .changelog h3 { font-size:15px; margin:14px 0 4px; }
   .changelog ul { margin:0 0 6px 18px; padding:0; }
   @media (max-width: 600px) { main { padding:12px; } }
@@ -54,6 +63,31 @@
     <div class="row">
       <button id="eject">Eject disc</button>
       <span class="muted" id="paths"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between; margin-top:0">
+      <h2>Save to</h2>
+      <button id="changeDest">Change folder</button>
+    </div>
+    <div><code id="dest">...</code></div>
+    <div id="free" class="muted"></div>
+    <div id="picker" class="picker" hidden>
+      <div class="row" style="margin-top:0">
+        <select id="root" aria-label="Top folder"></select>
+        <button id="up">Up one level</button>
+      </div>
+      <p class="muted" style="margin:8px 0 0">Browsing <code id="pickPath"></code> <span id="pickFree"></span></p>
+      <ul id="dirs"></ul>
+      <div class="row">
+        <input id="newFolder" type="text" maxlength="120" placeholder="New folder name, e.g. Kids Films">
+        <button id="mkdir">Create folder</button>
+      </div>
+      <div class="row">
+        <button id="useHere" class="primary">Save discs here</button>
+        <button id="cancelPick">Cancel</button>
+      </div>
     </div>
   </section>
 
@@ -87,7 +121,12 @@ function render(s) {
   $('#badge').textContent = s.status.replace('_', ' ');
   $('#message').textContent = s.message;
   $('#progress').style.width = (s.progress || 0) + '%';
-  $('#paths').textContent = 'Device ' + s.device + ' → ' + s.media_dir;
+  $('#paths').textContent = 'Drive ' + s.device;
+  $('#dest').textContent = s.destination;
+  const freeGb = s.free_bytes == null ? null : s.free_bytes / 1e9;
+  $('#free').textContent = freeGb == null ? '' : formatFree(s.free_bytes) + ' free' + (freeGb < 10 ? '. Not enough for a full DVD.' : ' (about ' + Math.floor(freeGb / 6) + ' more DVDs)');
+  $('#free').className = freeGb != null && freeGb < 10 ? 'warn' : 'muted';
+  $('#changeDest').disabled = s.status === 'ripping';
   $('#log').textContent = s.log.join('\n') || 'No activity yet.';
   $('#log').scrollTop = $('#log').scrollHeight;
 
@@ -124,6 +163,73 @@ $('#eject').addEventListener('click', async () => {
   const res = await fetch('api/eject', {method: 'POST'});
   const data = await res.json();
   if (!data.ok) alert(data.message);
+  refresh();
+});
+
+function formatFree(bytes) {
+  return bytes >= 1e12 ? (bytes / 1e12).toFixed(2) + ' TB' : (bytes / 1e9).toFixed(1) + ' GB';
+}
+
+// Folder picker
+let pickPath = null;
+
+async function browse(path) {
+  const res = await fetch('api/folders' + (path ? '?path=' + encodeURIComponent(path) : ''));
+  const d = await res.json();
+  if (!d.ok) { alert(d.message); return; }
+  pickPath = d.path;
+  $('#pickPath').textContent = d.path;
+  $('#pickFree').textContent = d.free_bytes == null ? '' : '(' + formatFree(d.free_bytes) + ' free)';
+  $('#up').disabled = !d.parent;
+  $('#up').dataset.parent = d.parent || '';
+
+  const root = $('#root');
+  root.innerHTML = '';
+  for (const r of d.roots) {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    if (d.path === r || d.path.startsWith(r + '/')) opt.selected = true;
+    root.appendChild(opt);
+  }
+
+  const list = $('#dirs');
+  list.innerHTML = '';
+  if (!d.dirs.length) {
+    const li = document.createElement('li');
+    li.className = 'empty'; li.textContent = 'No folders here';
+    list.appendChild(li);
+  }
+  for (const name of d.dirs) {
+    const li = document.createElement('li');
+    li.textContent = '📁 ' + name;
+    li.addEventListener('click', () => browse(d.path.replace(/\/$/, '') + '/' + name));
+    list.appendChild(li);
+  }
+}
+
+$('#changeDest').addEventListener('click', () => {
+  $('#picker').hidden = false;
+  browse($('#dest').textContent);
+});
+$('#cancelPick').addEventListener('click', () => { $('#picker').hidden = true; });
+$('#up').addEventListener('click', () => { if ($('#up').dataset.parent) browse($('#up').dataset.parent); });
+$('#root').addEventListener('change', (e) => browse(e.target.value));
+
+$('#mkdir').addEventListener('click', async () => {
+  const name = $('#newFolder').value.trim();
+  if (!name) return;
+  const res = await fetch('api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: pickPath, name})});
+  const d = await res.json();
+  if (!d.ok) { alert(d.message); return; }
+  $('#newFolder').value = '';
+  browse(d.path);
+});
+
+$('#useHere').addEventListener('click', async () => {
+  const res = await fetch('api/destination', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: pickPath})});
+  const d = await res.json();
+  if (!d.ok) { alert(d.message); return; }
+  $('#picker').hidden = true;
   refresh();
 });
 
