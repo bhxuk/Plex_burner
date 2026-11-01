@@ -51,6 +51,9 @@
     location: i % 4 === 3 ? "Kids films" : "Movies", location_path: i % 4 === 3 ? "/srv/media/kids" : "/srv/media/movies",
     kind: i === 5 ? "dvd" : "movie", size: gb * GB, date: Math.floor(T0 - i * 86400 * 1.7 - 3600), frames: 4,
   }));
+  let failed = [{ id: "f1", name: "Carnival of Souls (1962)", path: "/srv/media/movies/.failed/Carnival of Souls (1962) (2026-10-30 2114)",
+    error: "ffmpeg failed: Invalid data found when processing input", date: Math.floor(T0 - 86400 * 2), drive: "sr1",
+    size: 3.1 * GB, state: "failed", exists: true, videos: 1 }];
   const history = library.slice(0, 6).map((l, i) => ({ name: l.name, path: l.path, type: "dvd", format: i === 5 ? "folder" : "mkv", size: l.size, seconds: 780 + i * 61, date: l.date, drive: i % 2 ? "sr1" : "sr0" }));
   const log = [
     [-5400, "sr0", "Drive found: HL-DT-ST DVDRAM GP65NB60"], [-5390, "sr1", "Drive found: ASUS SDRW-08D2S-U (USB)"],
@@ -100,7 +103,13 @@
     await new Promise(r => setTimeout(r, 60));
     const method = (opts.method || "GET").toUpperCase(), url = new URL(path, "http://demo/"), p = url.pathname.replace(/^\//, ""), b = body(opts);
     let m;
-    if (p === "api/status") return { version: VERSION, update_available: false, drives: ["sr0", "sr1"].map(driveSnap), log };
+    if (p === "api/status") return { version: VERSION, update_available: false, drives: ["sr0", "sr1"].map(driveSnap), log, failed: failed.map(f => [f.id, f.state]) };
+    if (p === "api/failed") return failed;
+    if ((m = p.match(/^api\/failed\/(\w+)(?:\/(retry|keep))?$/))) {
+      if (m[2] === "retry") { failed[0].state = "retrying"; return { ok: true, message: "Retrying." }; }
+      failed = failed.filter(f => f.id !== m[1]);
+      return { ok: true, message: "/srv/media/movies/Carnival of Souls (1962)" };
+    }
     if (p === "api/health") return { ok: true, version: VERSION, drives: 2 };
     if ((m = p.match(/^api\/drive\/(sr\d)\/(copy|cancel|eject|pending)$/))) {
       const d = drives[m[1]];

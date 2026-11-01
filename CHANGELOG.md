@@ -3,6 +3,18 @@
 All notable changes to Plex Burner are listed here. The website shows this file, and the in-app
 updater checks `app/VERSION`, so every release needs an entry. Versions follow [semantic versioning](https://semver.org).
 
+## [1.4.0] - 2026-11-01
+
+### Added
+- **TV series DVDs:** each episode is saved as its own file, named and filed the way Plex, Jellyfin and Emby expect, for example `The Simpsons/Season 11/The Simpsons - S11E01.mkv`. Duplicate titles and "play all" titles are skipped. You can set the show name, season and first episode number before copying, so disc 2 carries on where disc 1 ended
+- **Failed copies are kept:** if a copy fails, whatever was copied is kept in a hidden `.failed` folder (media servers ignore it) and listed under **Failed copies** on the Disc tab, with **Retry**, **Keep files** and **Delete**
+
+### Fixed
+- Some DVDs were mistaken for data discs, so they were copied without being decrypted and could not be converted. DVDs are now recognised from their title list
+- Videos from DVD recorders and camcorders (VOB, VRO, MOD, TOD) failed to convert with "Unknown input format: 'vob'"
+- DVD menu files are no longer counted or converted as videos
+- Films whose longest title is a "play all" of other titles now copy the real film
+
 ## [1.3.2] - 2026-11-01
 
 ### Added

@@ -58,6 +58,47 @@ def unique_path(path: str) -> str:
     return candidate
 
 
+def parse_show(name: str) -> tuple[str, int]:
+    """'Simpsons Season11' or 'Friends S03 Disc 2' -> ('Simpsons', 11) / ('Friends', 3)."""
+    m = re.search(r"^(.*?)[\s._-]*(?:season|series|s)[\s._-]*0*(\d{1,2})\b", name, re.I)
+    if m and m.group(1).strip():
+        return m.group(1).strip(" -_."), int(m.group(2))
+    return re.sub(r"[\s._-]*(?:disc|disk|dvd)[\s._-]*\d+$", "", name, flags=re.I).strip() or name, 1
+
+
+def find_episodes(tracks: list[dict]) -> tuple[list[dict], set[int]]:
+    """TV episodes on a DVD, and the "play all" titles to ignore.
+
+    Episodes are titles of 10 to 70 minutes and similar length. Titles that point at the
+    same part of the disc are duplicates (often commentary or language variants), and a
+    title made of other titles' pieces is a "play all". Returns ([], play_all) for films.
+    """
+    def cells(t):
+        return [(c.get("first_sector"), c.get("last_sector")) for c in t.get("cell", [])]
+
+    candidates, seen = [], set()
+    for t in sorted(tracks, key=lambda t: t["ix"]):
+        if not 600 <= t.get("length", 0) <= 4200:
+            continue
+        signature = (t.get("vts"), tuple(cells(t)))
+        if signature in seen:
+            continue
+        seen.add(signature)
+        candidates.append(t)
+    pieces = {c for t in candidates for c in cells(t)}
+    play_all = {t["ix"] for t in tracks
+                if t not in candidates and sum(1 for c in cells(t) if c in pieces) >= 2}
+    if len(candidates) < 2:
+        return [], play_all
+    lengths = sorted(t["length"] for t in candidates)
+    median = lengths[len(lengths) // 2]
+    episodes = [t for t in candidates if abs(t["length"] - median) <= 0.35 * median]
+    film = any(t.get("length", 0) > 4200 and t["ix"] not in play_all for t in tracks)
+    if len(episodes) >= 3 and not film:
+        return episodes, play_all
+    return [], play_all
+
+
 def ffmpeg_out_time(progress_file: str) -> float:
     """Seconds of output written so far, from an ffmpeg -progress file."""
     try:
@@ -76,6 +117,56 @@ def encode_args(fmt: str) -> list[str]:
                 "-vf", "bwdif=mode=send_frame:deint=interlaced", "-c:a", "aac", "-b:a", "384k",
                 "-movflags", "+faststart"]
     return ["-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-c", "copy"]
+
+
+def video_files(root: str) -> list[str]:
+    """Video files under root, biggest first in name order, skipping DVD menus (VIDEO_TS.VOB, VTS_xx_0.VOB)."""
+    found = []
+    for path in glob.glob(os.path.join(root, "**", "*"), recursive=True):
+        base = os.path.basename(path).upper()
+        if base == "VIDEO_TS.VOB" or re.match(r"VTS_\d+_0\.VOB$", base):
+            continue
+        if path.lower().endswith(VIDEO_EXTS) and os.path.isfile(path) and os.path.getsize(path) > 1_000_000:
+            found.append(path)
+    return sorted(found)
+
+
+def convert_videos(videos: list[str], out_dir: str, name: str, fmt: str, ffmpeg, phase=None, log=None) -> list[str]:
+    """Remux (MKV) or convert (MP4) each video into out_dir as 'name.ext' or 'name - ptN.ext'.
+
+    ffmpeg(input_args, out_file, fmt, duration) does the work. Files MKV can't hold as they are
+    are converted instead.
+    """
+    outputs = []
+    ext = "mp4" if fmt == "mp4" else "mkv"
+    for n, video in enumerate(videos, 1):
+        target = os.path.join(out_dir, f"{name}.{ext}" if len(videos) == 1 else f"{name} - pt{n}.{ext}")
+        if phase:
+            phase(f"Converting video {n} of {len(videos)}")
+        # DVD-style program streams (VOB, VRO from DVD recorders, MOD/TOD from camcorders) need the mpeg demuxer.
+        input_args = ["-f", "mpeg"] if video.lower().endswith((".vro", ".vob", ".mod", ".tod")) else []
+        input_args += ["-fflags", "+genpts", "-i", video]
+        try:
+            ffmpeg(input_args, target, fmt, media_duration(video))
+        except Cancelled:
+            raise
+        except Exception as exc:
+            if fmt == "mp4":
+                raise
+            if log:
+                log(f"Could not remux {os.path.basename(video)} ({exc}), converting it instead")
+            target = os.path.splitext(target)[0] + ".mp4"
+            ffmpeg(input_args, target, "mp4", media_duration(video))
+        outputs.append(target)
+    return outputs
+
+
+def run_ffmpeg(input_args: list[str], out_file: str, fmt: str, duration: float = 0) -> None:
+    """ffmpeg without progress reporting, for fixing failed copies."""
+    code, out = run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *input_args, *encode_args(fmt),
+                     "-max_muxing_queue_size", "4096", "-y", out_file], timeout=6 * 3600)
+    if code != 0:
+        raise RuntimeError("ffmpeg failed: " + " | ".join(out.splitlines()[-3:]))
 
 
 class Cancelled(Exception):
@@ -117,6 +208,7 @@ class DiscWorker:
             "live_preview": 0,
             "output": None,
             "tray": "unknown",
+            "tv": None,  # {"show", "season", "first_episode"} on TV discs
         }
 
     # ---- basics ----------------------------------------------------------------
@@ -231,10 +323,9 @@ class DiscWorker:
     # ---- detection -------------------------------------------------------------
     def probe(self) -> tuple[str, str, dict]:
         """(kind, suggested name, info) for the disc in the drive."""
-        code, out = run(["dvdbackup", "-I", "-i", self.device])
-        match = re.search(r"DVD-Video information of the DVD Title:\s*(.+)", out)
-        if code == 0 and match:
-            return "dvd", tidy_title(match.group(1)), self.read_dvd_info()
+        info = self.read_dvd_info()
+        if info:
+            return "dvd", tidy_title(info.get("title") or "") or datetime.now().strftime("DVD %Y-%m-%d"), info
         _, label = run(["blkid", "-o", "value", "-s", "LABEL", self.device])
         _, fstype = run(["blkid", "-o", "value", "-s", "TYPE", self.device])
         if not fstype:
@@ -244,8 +335,8 @@ class DiscWorker:
         return "data", tidy_title(label) or datetime.now().strftime("Disc %Y-%m-%d"), info
 
     def read_dvd_info(self) -> dict:
-        """Titles, running time, chapters, audio and subtitles from lsdvd."""
-        code, out = run_stdout(["lsdvd", "-a", "-s", "-c", "-Oy", self.device], timeout=90)
+        """Titles, running time, chapters, audio and subtitles from lsdvd, plus TV episodes if it's a TV disc."""
+        code, out = run_stdout(["lsdvd", "-x", "-Oy", self.device], timeout=120)
         if code != 0 or "{" not in out:
             return {}
         try:
@@ -255,8 +346,13 @@ class DiscWorker:
         tracks = data.get("track") or []
         if not tracks:
             return {}
-        main = next((t for t in tracks if t.get("ix") == data.get("longest_track")), None)
-        main = main or max(tracks, key=lambda t: t.get("length", 0))
+        episodes, play_all = find_episodes(tracks)
+        if episodes:
+            main = episodes[0]
+        else:
+            # A film: the longest title that isn't a "play all" of other titles.
+            films = [t for t in tracks if t["ix"] not in play_all] or tracks
+            main = max(films, key=lambda t: t.get("length", 0))
 
         def unique(values):
             seen = []
@@ -278,6 +374,8 @@ class DiscWorker:
                 f"{a.get('language') or a.get('langcode') or 'Unknown'} {str(a.get('format', '')).upper()} {a.get('channels', '?')}ch"
                 for a in main.get("audio", [])),
             "subtitles": unique(s.get("language") or s.get("langcode") for s in main.get("subp", [])),
+            "episodes": [{"title": t["ix"], "duration": round(t.get("length", 0)),
+                          "chapters": len(t.get("chapter", []))} for t in episodes],
         }
 
     def read_data_listing(self) -> dict:
@@ -292,7 +390,8 @@ class DiscWorker:
             folder = re.search(r"^Folder = \+$", block, re.M)
             if path and size and not folder:
                 files.append((path.group(1), int(size.group(1))))
-        videos = [(p, s) for p, s in files if p.lower().endswith(VIDEO_EXTS) and s > 1_000_000]
+        menus = re.compile(r"(^|/)(VIDEO_TS\.VOB|VTS_\d+_0\.VOB)$", re.I)
+        videos = [(p, s) for p, s in files if p.lower().endswith(VIDEO_EXTS) and s > 1_000_000 and not menus.search(p)]
         upper = " ".join(p.upper() for p, _ in files)
         source = ("DVD recorder" if "VIDEO_RM" in upper or ".VRO" in upper
                   else "Camcorder (AVCHD)" if "BDMV" in upper or ".MTS" in upper
@@ -314,15 +413,34 @@ class DiscWorker:
             return
         info["size"] = self.sectors() * 512
         suggested = safe_name(suggested)
-        self.set(status="waiting", disc_type=kind, disc_info=info, suggested=suggested, name=suggested,
+        tv = None
+        if info.get("episodes"):
+            show, season = parse_show(suggested)
+            tv = {"show": show, "season": season, "first_episode": 1}
+        self.set(status="waiting", disc_type=kind, disc_info=info, suggested=suggested, name=suggested, tv=tv,
                  pending_since=time.time(), message="Check the name and folder, then press Copy.")
-        what = "DVD" if kind == "dvd" else f"data disc with {info.get('videos', 0)} video file(s)"
+        if tv:
+            what = f"TV DVD with {len(info['episodes'])} episodes"
+        else:
+            what = "DVD" if kind == "dvd" else f"data disc with {info.get('videos', 0)} video file(s)"
         self.log(f"Detected {what} '{suggested}'")
         if kind == "dvd":
             threading.Thread(target=self.make_disc_previews, args=(disc_id, info), daemon=True).start()
 
-    def set_pending(self, name: str | None, destination: str | None) -> None:
-        """Name or folder typed in the dashboard: auto-start uses them, and its countdown restarts."""
+    @staticmethod
+    def clean_tv(tv: dict | None, current: dict | None) -> dict | None:
+        if not current:
+            return None
+        tv = tv or {}
+        try:
+            return {"show": safe_name(tv.get("show") or current["show"]),
+                    "season": max(0, min(int(tv.get("season", current["season"])), 99)),
+                    "first_episode": max(1, min(int(tv.get("first_episode", current["first_episode"])), 999))}
+        except (TypeError, ValueError):
+            return current
+
+    def set_pending(self, name: str | None, destination: str | None, tv: dict | None = None) -> None:
+        """Name, folder or episode numbering typed in the dashboard: auto-start uses them, and its countdown restarts."""
         with self.lock:
             if self.state["status"] != "waiting":
                 return
@@ -330,6 +448,8 @@ class DiscWorker:
                 self.state["name"] = safe_name(name)
             if destination is not None:
                 self.state["pending_dest"] = destination if allowed_dir(destination) else None
+            if tv is not None:
+                self.state["tv"] = self.clean_tv(tv, self.state.get("tv"))
             self.state["pending_since"] = time.time()
 
     def tick(self) -> None:
@@ -346,7 +466,7 @@ class DiscWorker:
             if status != "idle":
                 self.clear_previews()
                 self.set(status="idle", disc_type=None, disc_info={}, suggested="", name="", progress=0,
-                         previews=0, live_preview=0, pending_dest=None)
+                         previews=0, live_preview=0, pending_dest=None, tv=None)
             self.set(message=message)
             return
         if status == "idle":
@@ -358,7 +478,7 @@ class DiscWorker:
             self.start(name, dest)
 
     # ---- copying ---------------------------------------------------------------
-    def start(self, name: str, destination: str | None = None) -> tuple[bool, str]:
+    def start(self, name: str, destination: str | None = None, tv: dict | None = None) -> tuple[bool, str]:
         settings = self.settings.load()
         destination = destination or default_destination(settings)
         if not allowed_dir(destination):
@@ -370,11 +490,13 @@ class DiscWorker:
             if self.state["status"] not in ("waiting", "error") or not self.state["disc_type"]:
                 return False, "No disc is waiting to be copied."
             kind = self.state["disc_type"]
+            tv = self.clean_tv(tv, self.state.get("tv")) if self.state.get("tv") else None
+            label = f"{tv['show']} season {tv['season']}" if tv else name
             self.cancel_requested = False
-            self.state.update(status="copying", name=name, destination=destination, format=fmt, progress=0,
-                              copied=0, speed=0, eta=None, started=time.time(), live_preview=0, output=None,
-                              phase="Starting", message=f"Copying '{name}'")
-        threading.Thread(target=self._copy, args=(name, kind, destination, fmt), daemon=True).start()
+            self.state.update(status="copying", name=label, tv=tv, destination=destination, format=fmt,
+                              progress=0, copied=0, speed=0, eta=None, started=time.time(), live_preview=0,
+                              output=None, phase="Starting", message=f"Copying '{label}'")
+        threading.Thread(target=self._copy, args=(name, kind, destination, fmt, tv), daemon=True).start()
         return True, "Copy started."
 
     def cancel(self) -> bool:
@@ -436,8 +558,12 @@ class DiscWorker:
     def _phase(self, text: str) -> None:
         self.set(phase=text, phase_started=time.time(), progress=0, eta=None)
 
-    def _ffmpeg(self, input_args: list[str], out_file: str, fmt: str, duration: float, live: bool = True) -> None:
-        """Remux or convert to out_file with progress, writing a live preview frame as it goes."""
+    def _ffmpeg(self, input_args: list[str], out_file: str, fmt: str, duration: float, live: bool = True,
+                offset: float = 0.0, total: float | None = None, written_before: int = 0) -> None:
+        """Remux or convert to out_file with progress, writing a live preview frame as it goes.
+
+        offset/total/written_before let several files (TV episodes) share one progress bar.
+        """
         progress_file = f"/tmp/pb-{self.name}.progress"
         if os.path.exists(progress_file):
             os.remove(progress_file)
@@ -445,15 +571,37 @@ class DiscWorker:
                *encode_args(fmt), "-max_muxing_queue_size", "4096", "-progress", progress_file, "-y", out_file]
         if live:
             cmd += ["-map", "0:v:0", "-vf", "fps=1/15,scale=640:-2", "-q:v", "4", "-update", "1", "-y", self.live_path()]
+        total = total or duration
 
         def tick():
-            done = ffmpeg_out_time(progress_file)
-            size = os.path.getsize(out_file) if os.path.exists(out_file) else 0
-            est = int(size * duration / done) if done > 5 and duration else None
-            self._progress(done, duration, copied=size, total_bytes=est)
+            done = offset + ffmpeg_out_time(progress_file)
+            size = written_before + (os.path.getsize(out_file) if os.path.exists(out_file) else 0)
+            est = int(size * total / done) if done > 5 and total else None
+            self._progress(done, total, copied=size, total_bytes=est)
             self.live_tick()
 
         self._run(cmd, tick, log_name="ffmpeg")
+
+    def _copy_tv(self, work: str, fmt: str, tv: dict) -> list[str]:
+        """One file per episode, named the way Plex, Jellyfin and Emby expect: Show - S01E01.mkv."""
+        episodes = self.state["disc_info"]["episodes"]
+        ext = "mp4" if fmt == "mp4" else "mkv"
+        total = float(sum(e["duration"] for e in episodes)) or 1.0
+        self.set(phase_started=time.time())
+        outputs, done, written = [], 0.0, 0
+        for n, ep in enumerate(episodes):
+            number = tv["first_episode"] + n
+            label = f"S{tv['season']:02d}E{number:02d}"
+            out_file = os.path.join(work, f"{tv['show']} - {label}.{ext}")
+            self.set(phase=f"Episode {n + 1} of {len(episodes)} ({label})")
+            self._ffmpeg(["-f", "dvdvideo", "-title", str(ep["title"]), "-i", self.device,
+                          "-metadata", f"title={tv['show']} {label}"], out_file, fmt, ep["duration"],
+                         offset=done, total=total, written_before=written)
+            done += ep["duration"]
+            written += os.path.getsize(out_file)
+            outputs.append(out_file)
+            self.log(f"Episode {label} done")
+        return outputs
 
     def _copy_dvd(self, name: str, work: str, fmt: str) -> list[str]:
         info = self.state["disc_info"]
@@ -521,52 +669,74 @@ class DiscWorker:
         self._phase("Unpacking the files")
         self._run(["7z", "x", "-y", f"-o{files}", image], log_name="7z")
         os.remove(image)
-        videos = sorted(p for p in glob.glob(os.path.join(files, "**", "*"), recursive=True)
-                        if p.lower().endswith(VIDEO_EXTS) and os.path.isfile(p) and os.path.getsize(p) > 1_000_000)
+        videos = video_files(files)
         if not videos or fmt == "folder":
             for entry in os.listdir(files):
                 shutil.move(os.path.join(files, entry), os.path.join(work, entry))
             os.rmdir(files)
             self.log("No video files on this disc, saved its files as a folder" if not videos else "Saved the disc's files")
             return [work]
-        outputs = []
-        ext = "mp4" if fmt == "mp4" else "mkv"
-        for n, video in enumerate(videos, 1):
-            target = os.path.join(work, f"{name}.{ext}" if len(videos) == 1 else f"{name} - pt{n}.{ext}")
-            self._phase(f"Converting video {n} of {len(videos)}")
-            input_args = ["-f", "vob"] if video.lower().endswith((".vro", ".vob")) else []
-            input_args += ["-fflags", "+genpts", "-i", video]
-            try:
-                self._ffmpeg(input_args, target, fmt, media_duration(video))
-            except Cancelled:
-                raise
-            except Exception as exc:
-                if fmt == "mp4":
-                    raise
-                # Some codecs can't go in MKV as they are: convert those instead.
-                self.log(f"Could not remux {os.path.basename(video)} ({exc}), converting it instead")
-                self._ffmpeg(input_args, target, "mp4", media_duration(video))
-            outputs.append(target)
+        outputs = convert_videos(videos, work, name, fmt, self._ffmpeg, self._phase, self.log)
         shutil.rmtree(files, ignore_errors=True)
         return outputs
 
-    def _copy(self, name: str, kind: str, destination: str, fmt: str) -> None:
+    def _place_tv(self, work: str, destination: str, tv: dict) -> str:
+        """Move episodes into Show/Season NN/, joining folders made by earlier discs of the same show."""
+        season_dir = os.path.join(destination, tv["show"], f"Season {tv['season']:02d}")
+        os.makedirs(season_dir, exist_ok=True)
+        for entry in sorted(os.listdir(work)):
+            stem, ext = os.path.splitext(entry)
+            target = os.path.join(season_dir, entry)
+            n = 2
+            while os.path.exists(target):
+                target = os.path.join(season_dir, f"{stem} ({n}){ext}")
+                n += 1
+            os.rename(os.path.join(work, entry), target)
+        os.rmdir(work)
+        give_to_user(os.path.join(destination, tv["show"]))
+        return season_dir
+
+    def _keep_failed(self, work: str, name: str, destination: str, kind: str, fmt: str, tv, error: str) -> None:
+        """Keep whatever was copied in a hidden .failed folder (media servers skip it) and list it in the app."""
+        path = None
+        if os.path.isdir(work) and dir_size(work) > 0:
+            failed_dir = os.path.join(destination, ".failed")
+            os.makedirs(failed_dir, exist_ok=True)
+            path = unique_path(os.path.join(failed_dir, f"{name} ({datetime.now():%Y-%m-%d %H%M})"))
+            os.rename(work, path)
+            give_to_user(path)
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+        entry = {"id": f"{int(time.time() * 1000):x}", "name": name, "path": path, "destination": destination,
+                 "type": kind, "format": fmt, "tv": tv, "error": error[:500], "date": int(time.time()),
+                 "drive": self.name, "size": dir_size(path) if path else 0, "state": "failed"}
+        self.settings.update(lambda s: s.__setitem__("failed", ([entry] + s.get("failed", []))[:100]))
+        self.log(f"Kept the partial copy in {path}" if path else "Nothing had been copied yet")
+
+    def _copy(self, name: str, kind: str, destination: str, fmt: str, tv: dict | None = None) -> None:
         started = time.time()
         work = os.path.join(destination, f".partial-{self.name}-{name}")
         shutil.rmtree(work, ignore_errors=True)
         os.makedirs(work)
         label = {"mkv": "MKV", "mp4": "MP4", "folder": "a full disc backup"}[fmt]
-        self.log(f"Copying '{name}' to {destination} as {label}")
+        what = f"{tv['show']} season {tv['season']} ({len(self.state['disc_info']['episodes'])} episodes)" if tv else name
+        self.log(f"Copying '{what}' to {destination} as {label}")
         try:
             if kind == "dvd" and fmt == "folder":
                 self._copy_folder(name, work)
+            elif kind == "dvd" and tv:
+                self._copy_tv(work, fmt, tv)
             elif kind == "dvd":
                 self._copy_dvd(name, work, fmt)
             else:
                 self._copy_data(name, work, fmt)
-            final = unique_path(os.path.join(destination, name))
-            os.rename(work, final)
-            give_to_user(final)
+            if tv and fmt != "folder":
+                final = self._place_tv(work, destination, tv)
+                name = f"{tv['show']} season {tv['season']}"
+            else:
+                final = unique_path(os.path.join(destination, name))
+                os.rename(work, final)
+                give_to_user(final)
             size = dir_size(final)
             seconds = int(time.time() - started)
             self.log(f"Saved {final} ({size / 1e9:.1f} GB in {max(1, seconds // 60)} min)")
@@ -586,7 +756,13 @@ class DiscWorker:
             self.log(f"Copy of '{name}' cancelled")
             self.set(status="error", progress=0, eta=None, phase="",
                      message="Copy cancelled. Press Copy to try again, or eject the disc.")
-        except Exception as exc:  # show the error and keep the drive watcher alive
-            shutil.rmtree(work, ignore_errors=True)
+        except Exception as exc:  # keep what was copied, show the error and keep the drive watcher alive
             self.log(f"Copy failed: {exc}")
-            self.set(status="error", eta=None, phase="", message=str(exc))
+            try:
+                self._keep_failed(work, name, destination, kind, fmt, tv, str(exc))
+            except OSError as keep_exc:
+                self.log(f"Could not keep the partial copy: {keep_exc}")
+            if self.on_copied:
+                self.on_copied()
+            self.set(status="error", eta=None, phase="",
+                     message=f"{exc} What was copied is kept under Failed copies below.")

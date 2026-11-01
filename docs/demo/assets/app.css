@@ -129,6 +129,10 @@ section.view{display:none}section.view.active{display:block;animation:fade .2s e
 @media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}
 .countdown{font-size:12px;color:var(--acc);margin-top:10px;font-family:var(--mono)}
 .drive{margin-bottom:14px}
+.tvgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:0 10px}
+@media(max-width:520px){.tvgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tvgrid .field:first-child{grid-column:1/-1}}
+#failedList .it{grid-template-columns:auto minmax(0,1fr) auto}
+#failedList .tt span{white-space:normal}
 .drive .dname{font-family:var(--mono);color:var(--text);letter-spacing:0;text-transform:none}
 .drive .dmodel{letter-spacing:0;text-transform:none;font-weight:500}
 .phase{font-size:12px;color:var(--muted);margin-bottom:2px;display:flex;justify-content:space-between;gap:10px}

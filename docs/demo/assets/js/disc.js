@@ -25,9 +25,18 @@ function driveBlock(d) {
       <h3>Disc <span class="right disc-chip"></span></h3>
       <div class="dtitle">No disc</div><div class="chips"></div><div class="dmsg"></div>
       <div class="dform" hidden>
-        <div class="field"><label>Name</label>
+        <div class="field d-name-field"><label>Name</label>
           <input class="input d-name" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Movie Name (Year)">
           <span class="hint">Use <b>Movie Name (Year)</b> so Plex, Jellyfin or Emby match it automatically.</span></div>
+        <div class="d-tv" hidden>
+          <div class="tvgrid">
+            <div class="field"><label>Show</label><input class="input d-show" maxlength="120" autocomplete="off" spellcheck="false" placeholder="The Simpsons"></div>
+            <div class="field"><label>Season</label><input class="input d-season" type="number" min="0" max="99"></div>
+            <div class="field"><label>First episode</label><input class="input d-first" type="number" min="1" max="999"></div>
+          </div>
+          <div class="field"><label>Episodes on this disc</label><div class="chips d-eps"></div>
+            <span class="hint">Duplicates and "play all" titles are skipped. For disc 2 of a season, set the first episode to where disc 1 ended.</span></div>
+        </div>
         <div class="field"><label>Save to</label><select class="select d-dest"></select><span class="hint d-dest-hint"></span></div>
       </div>
       <div class="dprog" hidden>
@@ -43,6 +52,7 @@ function driveBlock(d) {
   const name = d.drive;
   const nameInput = q(".d-name"), dest = q(".d-dest");
   nameInput.addEventListener("input", () => { ui[name].nameDirty = true; sendPending(name); });
+  ["d-show", "d-season", "d-first"].forEach(c => q("." + c).addEventListener("input", () => { ui[name].tvDirty = true; sendPending(name); }));
   nameInput.addEventListener("keydown", e => { if (e.key === "Enter") q(".d-copy").click(); });
   dest.addEventListener("change", async () => {
     const s = driveState(name);
@@ -58,8 +68,8 @@ function driveBlock(d) {
   q(".d-copy").onclick = async () => {
     const btn = q(".d-copy"); btn.disabled = true;
     try {
-      await api(`api/drive/${name}/copy`, { method: "POST", json: { name: nameInput.value.trim(), destination: dest.value === BROWSE ? null : dest.value } });
-      ui[name].nameDirty = false; toast("Copy started");
+      await api(`api/drive/${name}/copy`, { method: "POST", json: { name: nameInput.value.trim(), destination: dest.value === BROWSE ? null : dest.value, tv: tvValues(name) } });
+      ui[name].nameDirty = false; ui[name].tvDirty = false; toast("Copy started");
     } catch (e) { toast(e.message); }
     btn.disabled = false; loadStatus();
   };
@@ -129,11 +139,13 @@ function renderDrives(s) {
   if (state.tab === "settings") $("#feedFull").innerHTML = feedHtml(s.log);
   const hk = s.drives.map(d => d.status + d.disc_id).join();
   if (hk !== histKey) { histKey = hk; loadHistory(); if (s.drives.some(d => d.status === "done")) loadLocations().catch(() => {}); }
+  const fk = JSON.stringify(s.failed || []);
+  if (fk !== failedKey) { if (failedKey !== null) loadHistory(); failedKey = fk; loadFailed(); }
 }
 
 function discChips(d) {
   const i = d.disc_info || {}, chips = [];
-  if (d.disc_type === "dvd") chips.push(`<span class="chip acc">DVD</span>`);
+  if (d.disc_type === "dvd") chips.push(`<span class="chip acc">${d.tv ? `TV DVD · ${(i.episodes || []).length} episodes` : "DVD"}</span>`);
   if (d.disc_type === "data") chips.push(`<span class="chip blue">${esc(i.source || "Data disc")}</span>`);
   if (fmtRuntime(i.duration)) chips.push(`<span class="chip">${esc(fmtRuntime(i.duration))}</span>`);
   if (i.chapters) chips.push(`<span class="chip">${i.chapters} chapters</span>`);
@@ -195,6 +207,15 @@ function renderForm(d) {
   if (!canStart) return;
   const name = $(".d-name", el), dest = $(".d-dest", el);
   if (!u.nameDirty && document.activeElement !== name) name.value = d.name || d.suggested || "";
+  const tv = d.tv, eps = d.disc_info?.episodes || [];
+  $(".d-tv", el).hidden = !tv; $(".d-name-field", el).hidden = !!tv;
+  if (tv && !u.tvDirty && !el.contains(document.activeElement)) {
+    $(".d-show", el).value = tv.show; $(".d-season", el).value = tv.season; $(".d-first", el).value = tv.first_episode;
+  }
+  if (tv) {
+    const first = +$(".d-first", el).value || 1, season = +$(".d-season", el).value || 0;
+    $(".d-eps", el).innerHTML = eps.map((e, n) => `<span class="chip acc" title="DVD title ${e.title}">S${String(season).padStart(2, "0")}E${String(first + n).padStart(2, "0")} · ${esc(fmtRuntime(e.duration))}</span>`).join("");
+  }
   const locKey = d.disc_id + ":" + state.locations.map(l => l.path + l.free).join("|") + ":" + d.destination;
   if (locKey !== u.destKey && document.activeElement !== dest) {
     u.destKey = locKey;
@@ -209,7 +230,10 @@ function destHint(name) {
   const el = ui[name].el, d = driveState(name);
   const loc = state.locations.find(l => l.path === $(".d-dest", el).value);
   const free = loc?.free, hint = $(".d-dest-hint", el);
-  const fmt = `Saved as ${FORMAT_LABEL[d?.format] || "MKV"} in its own folder. Change the format in Settings.`;
+  const tvv = d?.tv && tvValues(name);
+  const fmt = tvv
+    ? `Saved as ${tvv.show}/Season ${String(tvv.season).padStart(2, "0")}/${tvv.show} - S${String(tvv.season).padStart(2, "0")}E${String(tvv.first_episode).padStart(2, "0")}.${d.format === "mp4" ? "mp4" : "mkv"} and so on.`
+    : `Saved as ${FORMAT_LABEL[d?.format] || "MKV"} in its own folder. Change the format in Settings.`;
   if (free == null) { hint.textContent = fmt; return; }
   const fits = Math.floor(free / DVD_SIZE);
   hint.innerHTML = (free < 10e9 ? `<span style="color:var(--red)">Only ${fmtBytes(free)} free. A DVD needs 4 to 8 GB.</span>` : `${fmtBytes(free)} free, room for about ${fits} more DVD${fits === 1 ? "" : "s"}.`) + " " + esc(fmt);
@@ -260,7 +284,41 @@ function sendPending(name) {
   pendingTimers[name] = setTimeout(() => {
     const el = ui[name]?.el; if (!el) return;
     const dest = $(".d-dest", el).value;
-    api(`api/drive/${name}/pending`, { method: "POST", json: { name: $(".d-name", el).value, destination: dest === BROWSE ? null : dest } }).then(loadStatus).catch(() => {});
+    api(`api/drive/${name}/pending`, { method: "POST", json: { name: $(".d-name", el).value, destination: dest === BROWSE ? null : dest, tv: tvValues(name) } }).then(loadStatus).catch(() => {});
   }, 500);
 }
+function tvValues(name) {
+  const el = ui[name]?.el, d = driveState(name);
+  if (!el || !d?.tv) return null;
+  return { show: $(".d-show", el).value.trim() || d.tv.show, season: +$(".d-season", el).value || 0, first_episode: +$(".d-first", el).value || 1 };
+}
+
+/* Failed copies: kept files, with retry, keep and delete. */
+let failedKey = null;
+async function loadFailed() {
+  const items = await api("api/failed").catch(() => []);
+  $("#failedPanel").hidden = !items.length;
+  $("#failedList").innerHTML = items.map(f => `<div class="it" data-id="${esc(f.id)}">
+      <span class="ic" style="background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3)">!</span>
+      <div class="tt"><b>${esc(f.name)} ${f.state === "retrying" ? `<span class="chip acc">retrying</span>` : ""}</b>
+        <span title="${esc(f.error)}">${esc(f.error || "")}</span>
+        <span>${f.exists ? `${fmtBytes(f.size)} kept, ${f.videos} video file${f.videos === 1 ? "" : "s"} · ${esc(f.path)}` : "Nothing was copied before it failed. Insert the disc again to retry."}</span></div>
+      <div class="actions">${f.exists && f.videos ? `<button class="btn sm" data-act="retry" ${f.state === "retrying" ? "disabled" : ""}>Retry</button>` : ""}${f.exists ? `<button class="btn sm" data-act="keep">Keep files</button>` : ""}<button class="btn sm danger" data-act="delete">${f.exists ? "Delete" : "Dismiss"}</button></div>
+    </div>`).join("");
+}
+$("#failedList").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const id = b.closest(".it").dataset.id, act = b.dataset.act;
+  try {
+    if (act === "delete") {
+      const has = !!b.closest(".it").querySelector('[data-act="keep"]');
+      if (has && !await confirmDanger("Delete the kept files?", "The partly copied files are deleted for good. The disc itself is not touched.", "Delete")) return;
+      await api(`api/failed/${id}`, { method: "DELETE" });
+    } else {
+      const r = await api(`api/failed/${id}/${act}`, { method: "POST" });
+      toast(act === "retry" ? "Retrying in the background" : `Moved to ${r.message}`);
+    }
+  } catch (err) { toast(err.message); }
+  loadFailed(); loadHistory();
+});
 Tabs.disc = { enter: () => { if (state.status) renderDrives(state.status); } };

@@ -21,6 +21,7 @@ from .appsettings import AppSettings
 from .config import DATA_DIR, MEDIA_PATHS, PORT, STATIC_DIR, VERSION
 from .disc import DISC_FRAMES, FORMATS
 from .drives import DriveManager
+from .failed import FailedCopies
 from .library import Library
 from .locations import allowed_dir, browse, clean_folder_name, create_folder, default_destination, list_locations
 from .updater import updater
@@ -28,7 +29,8 @@ from .updater import updater
 settings = AppSettings(DATA_DIR / "settings.json")
 library = Library(settings)
 drives = DriveManager(settings, on_copied=library.invalidate)
-updater.busy = lambda: drives.busy
+failed = FailedCopies(settings, drives.events, on_change=library.invalidate)
+updater.busy = lambda: drives.busy or any(f.get("state") == "retrying" for f in settings.get("failed"))
 
 app = Flask(__name__, static_folder=None)
 
@@ -76,21 +78,44 @@ def api_status():
         "update_available": updater.status()["update_available"],
         "drives": drives.snapshots(),
         "log": drives.events.recent(200),
+        "failed": [[f["id"], f.get("state")] for f in settings.get("failed")],
     })
 
 
 @app.post("/api/drive/<name>/copy")
 def api_copy(name):
     data = request.get_json(silent=True) or {}
-    ok, message = drive_or_404(name).start(data.get("name", ""), data.get("destination") or None)
+    ok, message = drive_or_404(name).start(data.get("name", ""), data.get("destination") or None, data.get("tv"))
     return jsonify({"ok": True, "message": message}) if ok else fail(message, 409)
 
 
 @app.post("/api/drive/<name>/pending")
 def api_pending(name):
     data = request.get_json(silent=True) or {}
-    drive_or_404(name).set_pending(data.get("name"), data.get("destination"))
+    drive_or_404(name).set_pending(data.get("name"), data.get("destination"), data.get("tv"))
     return jsonify({"ok": True})
+
+
+@app.get("/api/failed")
+def api_failed():
+    return jsonify(failed.items())
+
+
+@app.post("/api/failed/<fid>/<action>")
+def api_failed_action(fid, action):
+    if action not in ("retry", "keep"):
+        abort(404)
+    try:
+        ok, message = failed.retry(fid) if action == "retry" else failed.keep(fid)
+    except OSError as exc:
+        return fail(str(exc))
+    return jsonify({"ok": True, "message": message}) if ok else fail(message, 409)
+
+
+@app.delete("/api/failed/<fid>")
+def api_failed_delete(fid):
+    ok, message = failed.delete(fid)
+    return jsonify({"ok": True}) if ok else fail(message, 404)
 
 
 @app.post("/api/drive/<name>/cancel")

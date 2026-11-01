@@ -16,6 +16,7 @@ DEFAULTS = {
     "destination": None,         # default save folder, None means the first media path
     "locations": [],             # [{"path": ..., "name": ...}]
     "history": [],               # newest first
+    "failed": [],                # failed copies kept for fixing, newest first
 }
 
 

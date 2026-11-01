@@ -35,6 +35,11 @@
     <section class="view active" id="v-disc">
       <div id="drives"><div class="panel empty">Looking for disc drives...</div></div>
 
+      <div class="panel mb" id="failedPanel" hidden>
+        <h3>Failed copies <span class="right muted" style="font-size:12px">kept in a hidden .failed folder, so your media server ignores them</span></h3>
+        <div class="hist" id="failedList"></div>
+      </div>
+
       <div class="grid g2">
         <div class="panel"><h3>Recent copies <span class="right"><a href="#" data-goto="library">open library</a></span></h3><div class="hist" id="histList"><div class="muted">Nothing copied yet.</div></div></div>
         <div class="panel"><h3>Activity <span class="right"><a href="#" data-goto="settings" data-anchor="activity">full log</a></span></h3><div class="feed" id="feedMini"></div></div>
