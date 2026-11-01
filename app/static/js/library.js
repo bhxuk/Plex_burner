@@ -35,11 +35,32 @@ function openItem(id) {
   const [label, cls] = KIND[i.kind] || [i.kind, ""];
   const frames = i.frames ? [0, 1, 2, 3].map(n => `<img loading="lazy" src="${esc(media(`api/frame/${i.id}/${n}.jpg`))}" alt="Frame ${n + 1}" onerror="this.outerHTML='<div class=&quot;noimg&quot;>No frame</div>'">`).join("") : `<div class="noimg" style="grid-column:1/-1">No preview for disc images. Copy discs as MKV or MP4 to get previews.</div>`;
   openDrawer(i.name, `<span class="chip ${cls}">${esc(label)}</span>`, `
+    <div class="actions" style="margin-bottom:14px"><button class="btn primary" id="itRename">Rename</button></div>
     <div class="frames">${frames}</div>
     <div class="section-t">Details</div>
     <dl class="kvs"><dt>Size</dt><dd>${fmtBytes(i.size)}</dd><dt>Added</dt><dd>${esc(new Date(i.date * 1000).toLocaleString())}</dd>
       <dt>Location</dt><dd>${esc(i.location)}</dd><dt>Path</dt><dd>${esc(i.path)}</dd></dl>`);
+  $("#itRename").onclick = () => renameItem(i);
 }
+
+async function renameItem(i) {
+  const isFolder = i.kind !== "movie" || !/\.[a-z0-9]{2,4}$/i.test(i.path);
+  const r = await dialog("Rename", `
+    <div class="field"><label>New name</label><input class="input" id="rnName" value="${esc(i.name)}" spellcheck="false" autocomplete="off">
+      <span class="hint">Use <b>Movie Name (Year)</b>, for example <b>Charade (1963)</b>, so your media server finds the right film.
+      ${isFolder ? "The folder and the video files inside it are renamed together." : "The file keeps its extension."}</span></div>`,
+    [{ label: "Cancel", value: null }, { label: "Rename", cls: "primary", action: async body => {
+      const name = $("#rnName", body).value.trim();
+      if (!name || name === i.name) return false;
+      return api(`api/library/${i.id}/rename`, { method: "POST", json: { name } });
+    } }]);
+  if (!r) return;
+  toast("Renamed");
+  await loadLibrary(true);
+  if (r.id) openItem(r.id); else closeDrawer();
+  loadHistory();
+}
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "rnName") $("#dlgFoot .primary")?.click(); });
 
 $("#libGrid").addEventListener("click", e => { const c = e.target.closest(".card"); if (c) openItem(c.dataset.id); });
 $("#libSearch").addEventListener("input", renderLibrary);

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import threading
 import time
 
@@ -123,6 +124,33 @@ class Library:
         items.sort(key=lambda item: item["date"], reverse=True)
         self.sources = sources
         return items
+
+    def rename(self, iid: str, new_name: str) -> str:
+        """Rename an item's folder, and the video files inside named after it. Returns the new path."""
+        item = next((i for i in self.items() if i["id"] == iid), None)
+        if not item:
+            raise ValueError("That item is no longer in the library. Press Rescan.")
+        new_name = re.sub(r'[\\/:*?"<>|]', "", new_name or "").strip().strip(".")
+        if not new_name:
+            raise ValueError("Enter a name.")
+        old = item["path"]
+        parent = os.path.dirname(old)
+        if os.path.isfile(old):
+            target = os.path.join(parent, new_name + os.path.splitext(old)[1])
+        else:
+            target = os.path.join(parent, new_name)
+        if os.path.exists(target) and os.path.realpath(target) != os.path.realpath(old):
+            raise ValueError(f"Something called '{os.path.basename(target)}' is already there.")
+        if os.path.isdir(old):
+            # "Old Name.mkv" and "Old Name - pt2.mkv" become "New Name.mkv" and "New Name - pt2.mkv".
+            old_stem = os.path.basename(old)
+            for entry in os.listdir(old):
+                stem, ext = os.path.splitext(entry)
+                if stem == old_stem or stem.startswith(old_stem + " - "):
+                    os.rename(os.path.join(old, entry), os.path.join(old, new_name + stem[len(old_stem):] + ext))
+        os.rename(old, target)
+        self.invalidate()
+        return target
 
     def frame(self, iid: str, i: int) -> str | None:
         """Path to a cached JPEG frame, cutting it first if needed."""

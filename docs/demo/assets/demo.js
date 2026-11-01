@@ -3,7 +3,7 @@
    and generated artwork in place of video frames. */
 "use strict";
 (function () {
-  const VERSION = "1.3.1";
+  const VERSION = "1.3.2";
   const T0 = Date.now() / 1000;
   const now = () => Date.now() / 1000;
   const GB = 1e9;
@@ -108,6 +108,11 @@
       if (m[2] === "cancel") { d.cancelled = true; d.started = null; d.pending = now(); log.push({ ts: now(), drive: m[1], text: `Copy of '${d.name}' cancelled` }); return { ok: true }; }
       if (m[2] === "pending") { if (b.name) d.typed = b.name; d.pending = now(); return { ok: true }; }
       throw new Error("Ejecting is switched off in the demo.");
+    }
+    if ((m = p.match(/^api\/library\/(demo\d+)\/rename$/))) {
+      const item = library.find(i => i.id === m[1]);
+      item.name = b.name; item.path = item.location_path + "/" + b.name;
+      return { ok: true, path: item.path, id: item.id };
     }
     if (p === "api/history") return history;
     if (p === "api/library") return library;

@@ -16,7 +16,6 @@ of their files. drives.py starts one worker per drive.
 from __future__ import annotations
 
 import ast
-import fcntl
 import glob
 import os
 import re
@@ -150,6 +149,7 @@ class DiscWorker:
     def tray(self) -> str:
         """Ask the drive itself: empty, open, loading or ready. Cheap, and does not spin the disc."""
         try:
+            import fcntl  # Linux only, where drives exist
             fd = os.open(self.device, os.O_RDONLY | os.O_NONBLOCK)
             try:
                 return TRAY.get(fcntl.ioctl(fd, CDROM_DRIVE_STATUS, 0), "unknown")

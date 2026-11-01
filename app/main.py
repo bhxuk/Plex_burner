@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 import threading
 
-from flask import Flask, abort, jsonify, request, send_file, send_from_directory
+from flask import Flask, abort, jsonify, redirect, request, send_file, send_from_directory
 
 from .appsettings import AppSettings
 from .config import DATA_DIR, MEDIA_PATHS, PORT, STATIC_DIR, VERSION
@@ -49,6 +49,12 @@ def drive_or_404(name: str):
 @app.get("/")
 def index():
     return send_from_directory(STATIC_DIR, "index.html", max_age=0)
+
+
+@app.get("/dashboard")
+def old_dashboard():
+    """Bookmarks from version 1 still work."""
+    return redirect("/")
 
 
 @app.get("/assets/<path:path>")
@@ -124,6 +130,26 @@ def api_history():
 @app.get("/api/library")
 def api_library():
     return jsonify(library.items(refresh=request.args.get("refresh") == "1"))
+
+
+@app.post("/api/library/<iid>/rename")
+def api_library_rename(iid):
+    name = (request.get_json(silent=True) or {}).get("name", "")
+    old = next((i["path"] for i in library.items() if i["id"] == iid), None)
+    try:
+        new = library.rename(iid, name)
+    except (ValueError, OSError) as exc:
+        return fail(str(exc))
+
+    def fix_history(s):
+        for h in s.get("history", []):
+            if h.get("path") == old:
+                h["path"], h["name"] = new, os.path.splitext(os.path.basename(new))[0]
+
+    settings.update(fix_history)
+    drives.events.add("-", f"Renamed {os.path.basename(old or '')} to {os.path.basename(new)}")
+    item = next((i for i in library.items() if i["path"] == new), None)
+    return jsonify({"ok": True, "path": new, "id": item["id"] if item else None})
 
 
 @app.get("/api/frame/<iid>/<int:i>.jpg")

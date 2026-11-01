@@ -109,6 +109,11 @@
       if (m[2] === "pending") { if (b.name) d.typed = b.name; d.pending = now(); return { ok: true }; }
       throw new Error("Ejecting is switched off in the demo.");
     }
+    if ((m = p.match(/^api\/library\/(demo\d+)\/rename$/))) {
+      const item = library.find(i => i.id === m[1]);
+      item.name = b.name; item.path = item.location_path + "/" + b.name;
+      return { ok: true, path: item.path, id: item.id };
+    }
     if (p === "api/history") return history;
     if (p === "api/library") return library;
     if (p === "api/locations" && method === "GET") return { locations: locations.map(l => ({ ...l, available: true })), roots: ["/srv/media", "/mnt"] };

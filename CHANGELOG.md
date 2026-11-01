@@ -3,6 +3,14 @@
 All notable changes to Plex Burner are listed here. The website shows this file, and the in-app
 updater checks `app/VERSION`, so every release needs an entry. Versions follow [semantic versioning](https://semver.org).
 
+## [1.3.2] - 2026-11-01
+
+### Added
+- **Rename** anything in the Library: open it and press Rename. The folder and the video files inside are renamed together, so your media server picks up the new name
+
+### Fixed
+- Old bookmarks to `/dashboard` open the app instead of a Not Found page
+
 ## [1.3.1] - 2026-11-01
 
 ### Fixed
