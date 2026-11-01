@@ -3,6 +3,12 @@
 All notable changes to Plex Burner are listed here. The website shows this file, and the in-app
 updater checks `app/VERSION`, so every release needs an entry. Versions follow [semantic versioning](https://semver.org).
 
+## [1.3.1] - 2026-11-01
+
+### Fixed
+- A newly inserted disc is picked up within a few seconds. The drive is now asked whether a disc is ready instead of being test-read, which failed while a disc was still spinning up
+- The Disc tab says when the tray is open or a disc is still loading
+
 ## [1.3.0] - 2026-11-01
 
 A full rebuild: a proper dashboard, playable video files and support for several drives.

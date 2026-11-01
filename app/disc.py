@@ -16,6 +16,7 @@ of their files. drives.py starts one worker per drive.
 from __future__ import annotations
 
 import ast
+import fcntl
 import glob
 import os
 import re
@@ -34,6 +35,10 @@ DISC_FRAMES = 4
 VIDEO_EXTS = (".vob", ".vro", ".mts", ".m2ts", ".mpg", ".mpeg", ".avi", ".mov", ".mp4", ".m4v", ".mkv",
               ".wmv", ".3gp", ".flv", ".ts", ".mod", ".tod")
 FORMATS = ("mkv", "mp4", "folder")
+
+# Linux CDROM_DRIVE_STATUS ioctl and its answers.
+CDROM_DRIVE_STATUS = 0x5326
+TRAY = {1: "empty", 2: "open", 3: "loading", 4: "ready"}
 
 
 def tidy_title(text: str) -> str:
@@ -112,6 +117,7 @@ class DiscWorker:
             "previews": 0,
             "live_preview": 0,
             "output": None,
+            "tray": "unknown",
         }
 
     # ---- basics ----------------------------------------------------------------
@@ -141,8 +147,26 @@ class DiscWorker:
         except (OSError, ValueError):
             return 0
 
+    def tray(self) -> str:
+        """Ask the drive itself: empty, open, loading or ready. Cheap, and does not spin the disc."""
+        try:
+            fd = os.open(self.device, os.O_RDONLY | os.O_NONBLOCK)
+            try:
+                return TRAY.get(fcntl.ioctl(fd, CDROM_DRIVE_STATUS, 0), "unknown")
+            finally:
+                os.close(fd)
+        except OSError:
+            return "unknown"
+
     def present(self) -> bool:
-        """True only when a disc can actually be read. The size can stay set after an eject."""
+        """True only when a disc is loaded and readable. The size in /sys can stay set after an eject."""
+        status = self.tray()
+        self.state["tray"] = status
+        if status in ("empty", "open", "loading"):
+            return False
+        if status == "ready":
+            return True
+        # Drives that don't answer the status call: fall back to reading the first sector.
         if self.sectors() == 0:
             return False
         code, _ = run(["dd", f"if={self.device}", "of=/dev/null", "bs=2048", "count=1"], timeout=30)
@@ -317,10 +341,13 @@ class DiscWorker:
             self.live_tick()
             return
         if not self.present():
+            message = {"open": "The tray is open. Put a disc in and close it.",
+                       "loading": "Loading the disc..."}.get(self.state["tray"], "Insert a disc to begin.")
             if status != "idle":
                 self.clear_previews()
-                self.set(status="idle", message="Insert a disc to begin.", disc_type=None, disc_info={},
-                         suggested="", name="", progress=0, previews=0, live_preview=0, pending_dest=None)
+                self.set(status="idle", disc_type=None, disc_info={}, suggested="", name="", progress=0,
+                         previews=0, live_preview=0, pending_dest=None)
+            self.set(message=message)
             return
         if status == "idle":
             self.detect()
