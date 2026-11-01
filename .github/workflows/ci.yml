@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Version has a changelog entry
+        run: |
+          v="$(tr -d '[:space:]' < app/VERSION)"
+          echo "app/VERSION is $v"
+          grep -Eq "^## \[?v?${v//./\\.}\]?" CHANGELOG.md || { echo "::error::CHANGELOG.md has no entry for $v"; exit 1; }
+
+      - name: App starts and serves the API
+        run: |
+          mkdir -p /tmp/media/movies
+          DATA_DIR=/tmp/pb MEDIA_PATHS=/tmp/media PORT=9000 python -m app.main &
+          for i in $(seq 1 20); do curl -sf localhost:9000/api/health && break; sleep 1; done
+          for p in api/status api/library api/locations api/folders api/settings api/history "api/update?check=false" assets/js/core.js assets/app.css assets/demo.js; do
+            curl -sf "localhost:9000/$p" > /dev/null || { echo "::error::$p failed"; exit 1; }
+          done
+          curl -sf -X POST localhost:9000/api/locations -H 'content-type: application/json' -d '{"path":"/tmp/media/movies","name":"Movies","default":true}' > /dev/null
+          curl -sf localhost:9000/api/locations | grep -q '"default": *true'
+          echo "API OK"
+
+      - name: Shell scripts parse
+        run: bash -n scripts/build-pages.sh && sh -n scripts/docker-entrypoint.sh
+
+      - name: Demo is up to date
+        run: |
+          ./scripts/build-pages.sh
+          git diff --exit-code docs/demo || { echo "::error::docs/demo is stale, run ./scripts/build-pages.sh"; exit 1; }
+
+      - name: Docker image builds
+        run: docker build -t plex-burner:ci .

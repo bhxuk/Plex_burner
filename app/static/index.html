@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Plex Burner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f15'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23f5a524' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23f5a524'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="demo-banner" id="demoBanner" hidden>Live demo with simulated discs. <b>Install Plex Burner</b> on your own server to copy real ones.</div>
+<header class="top">
+  <div class="wrap">
+    <div class="logo"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>plex<b>burner</b></div>
+    <div class="drivebox"><b id="hDrive">drives</b><span id="hDriveTxt">connecting to server</span></div>
+    <div class="spacer"></div>
+    <div class="live" id="live"><span class="dot"></span><span id="liveTxt">connecting</span></div>
+    <a href="#updates" class="pill upd-pill" id="updPill" data-goto="updates" hidden><span class="dot"></span>Update available</a>
+    <span class="pill idle" id="statusPill"><span class="dot"></span><span id="statusTxt">Idle</span></span>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="disc">Disc</button>
+    <button class="tab" data-tab="library">Library <span class="badge" id="bLib">0</span></button>
+    <button class="tab" data-tab="locations">Locations <span class="badge" id="bLoc">0</span></button>
+    <button class="tab" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="updates">Updates <span class="badge upd" id="bUpd" hidden>new</span></button>
+  </nav>
+
+  <main>
+    <!-- DISC -->
+    <section class="view active" id="v-disc">
+      <div id="drives"><div class="panel empty">Looking for disc drives...</div></div>
+
+      <div class="grid g2">
+        <div class="panel"><h3>Recent copies <span class="right"><a href="#" data-goto="library">open library</a></span></h3><div class="hist" id="histList"><div class="muted">Nothing copied yet.</div></div></div>
+        <div class="panel"><h3>Activity <span class="right"><a href="#" data-goto="settings" data-anchor="activity">full log</a></span></h3><div class="feed" id="feedMini"></div></div>
+      </div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section class="view" id="v-library">
+      <div class="toolbar">
+        <input class="input search" id="libSearch" placeholder="Search your library" autocomplete="off">
+        <select class="select" id="libLoc"><option value="">All locations</option></select>
+        <div class="seg" id="libKind"></div>
+        <div class="spacer"></div>
+        <span class="muted" id="libCount"></span>
+        <button class="btn sm" id="libRefresh">Rescan</button>
+      </div>
+      <div class="lib" id="libGrid"></div>
+    </section>
+
+    <!-- LOCATIONS -->
+    <section class="view" id="v-locations">
+      <div class="toolbar">
+        <span class="muted">Where copied discs are saved. The default is used for every new disc unless you pick another.</span>
+        <div class="spacer"></div>
+        <button class="btn primary" id="locAdd">Add location</button>
+      </div>
+      <div class="locs" id="locList"></div>
+      <div class="notice" id="locRoots"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="v-settings">
+      <div class="grid g2">
+        <div class="panel" style="align-self:start">
+          <h3>Copying</h3>
+          <div class="setrow"><div class="txt"><b>Save movies as</b><span>MKV keeps the original picture, every audio track and subtitles, and is quickest. MP4 is converted to H.264, so it is smaller and plays on anything, but takes longer. A full disc backup keeps the menus and extras.</span></div>
+            <select class="select" id="setFormat"><option value="mkv">MKV, original quality</option><option value="mp4">MP4, converted</option><option value="folder">Full disc backup</option></select></div>
+          <div class="setrow"><div class="txt"><b>Start automatically</b><span>Copy with the suggested name if nobody presses Copy. Handy when you're feeding in a stack of discs.</span></div>
+            <select class="select" id="setAuto"><option value="0">Off</option><option value="30">After 30 seconds</option><option value="60">After 1 minute</option><option value="120">After 2 minutes</option><option value="300">After 5 minutes</option></select></div>
+          <div class="setrow"><div class="txt"><b>Eject when done</b><span>Open the tray when a copy finishes, ready for the next disc.</span></div>
+            <label class="switch"><input type="checkbox" id="setEject"><span class="t"></span></label></div>
+          <h3 class="mt" style="margin-top:22px">Server</h3>
+          <dl class="kvs" id="setServer"></dl>
+          <p class="muted" style="font-size:12px;margin:12px 0 0">The port and media folders are set in <code>.env</code> on the server. Disc drives are found automatically, including USB drives plugged in later.</p>
+        </div>
+        <div class="panel" id="activity"><h3>Activity log</h3><div class="feed full" id="feedFull"></div></div>
+      </div>
+    </section>
+
+    <!-- UPDATES -->
+    <section class="view" id="v-updates">
+      <div class="panel" style="max-width:760px">
+        <h3>Version <span class="right"><button class="btn sm" id="uCheck">Check now</button></span></h3>
+        <div class="ver"><div><span>Installed</span><b id="uCur">-</b></div><div><span>Latest</span><b id="uLatest">-</b></div><div><span>Install</span><b id="uMethod" style="font-size:15px">-</b></div></div>
+        <div id="uState"></div>
+        <button class="btn primary lg" id="uRun" style="margin-top:14px;width:100%" hidden>Update now</button>
+        <pre class="updlog" id="uLog" hidden></pre>
+        <div class="muted" style="font-size:12px;margin-top:14px" id="uMeta"></div>
+        <div class="muted" style="font-size:13px;margin-top:10px">See what's new in each version on the <a href="https://bhxuk.github.io/Plex_burner/#changelog" target="_blank" rel="noopener">Plex Burner website</a>.</div>
+      </div>
+    </section>
+  </main>
+  <footer>Plex Burner <span id="fVer"></span> · <a href="https://github.com/bhxuk/Plex_burner" target="_blank" rel="noopener">GitHub</a> · For personal backups of discs you own</footer>
+</div>
+
+<div class="modal" id="dlg"><div class="box"><div class="head"><b id="dlgTitle"></b><div class="spacer"></div><button class="btn sm" data-close>Close</button></div><div class="body" id="dlgBody"></div><div class="foot" id="dlgFoot"></div></div></div>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer"><div class="head"><b id="drTitle"></b><span id="drState"></span><div class="spacer"></div><button class="btn sm" id="drClose">Close</button></div><div class="body" id="drBody"></div></aside>
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/core.js"></script>
+<script src="assets/js/disc.js"></script>
+<script src="assets/js/library.js"></script>
+<script src="assets/js/locations.js"></script>
+<script src="assets/js/settings.js"></script>
+<script src="assets/js/updates.js"></script>
+<script src="assets/js/boot.js"></script>
+</body>
+</html>
