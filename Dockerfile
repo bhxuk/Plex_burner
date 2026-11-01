@@ -11,13 +11,16 @@ RUN sed -i 's/^Components: main$/Components: main contrib/' /etc/apt/sources.lis
     echo "libdvd-pkg libdvd-pkg/build boolean true" | debconf-set-selections \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates git eject util-linux dvdbackup libdvd-pkg \
+      ca-certificates curl git eject util-linux dvdbackup libdvd-pkg \
  && dpkg-reconfigure -f noninteractive libdvd-pkg \
  && rm -rf /var/lib/apt/lists/*
 
-# Docker CLI and Compose, used by the in-app update button.
+# Docker CLI and Compose v2, used by the in-app update button.
 COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
-COPY --from=docker/compose:2.34.0 /docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+RUN mkdir -p /usr/local/lib/docker/cli-plugins \
+ && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+      https://github.com/docker/compose/releases/download/v2.34.0/docker-compose-linux-x86_64 \
+ && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 WORKDIR /app
 COPY requirements.txt .
