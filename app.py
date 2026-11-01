@@ -72,6 +72,14 @@ def disc_sectors():
         return 0
 
 
+def disc_present():
+    """True only when a disc is actually readable. The size can stay set after an eject."""
+    if disc_sectors() == 0:
+        return False
+    code, _ = run(["dd", f"if={DISC_DEVICE}", "of=/dev/null", "bs=2048", "count=1"], timeout=30)
+    return code == 0
+
+
 def tidy_title(text):
     text = re.sub(r"\s+", " ", text.replace("_", " ")).strip()
     return text.title() if text.isupper() else text
@@ -190,14 +198,13 @@ def start_job(name):
 
 
 def tick():
-    sectors = disc_sectors()
     with lock:
         status = state["status"]
         pending_since = state["pending_since"]
         suggested = state["suggested"]
     if status == "ripping":
         return
-    if sectors == 0:
+    if not disc_present():
         if status != "idle":
             set_state(status="idle", message="Insert a disc to begin.", disc_type=None,
                       suggested="", name="", progress=0)
