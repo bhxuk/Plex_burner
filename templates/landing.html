@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plex Burner</title>
+<style>
+  :root { --bg:#ffffff; --card:#f6f8fa; --text:#1f2328; --muted:#59636e; --line:#d1d9e0; --accent:#e5a00d; --link:#0969da; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#e5a00d; --link:#4493f8; }
+  }
+  :root[data-theme="dark"] { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#e5a00d; --link:#4493f8; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif; }
+  a { color:var(--link); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  header { border-bottom:1px solid var(--line); padding:14px 24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+  header .brand { font-weight:700; font-size:18px; color:var(--text); }
+  header nav a { margin-left:16px; color:var(--muted); }
+  .wrap { max-width:960px; margin:0 auto; padding:0 20px; }
+  .hero { padding:56px 0 32px; }
+  .hero h1 { font-size:40px; line-height:1.15; margin:0 0 14px; }
+  .hero p { color:var(--muted); font-size:18px; margin:0 0 22px; }
+  .btn { display:inline-block; padding:10px 18px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--text); font-weight:600; margin-right:10px; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#111; }
+  .btn:hover { text-decoration:none; opacity:.9; }
+  h2 { font-size:24px; margin:36px 0 12px; border-bottom:1px solid var(--line); padding-bottom:8px; }
+  .steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card b { display:block; margin-bottom:4px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; overflow:auto; font-size:14px; }
+  code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  .changelog h3 { font-size:17px; margin:18px 0 6px; }
+  .changelog ul { margin:0 0 8px 20px; padding:0; color:var(--muted); }
+  footer { margin:48px 0 24px; color:var(--muted); font-size:14px; }
+  @media (max-width: 600px) { .hero h1 { font-size:30px; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Plex Burner</span>
+  <nav><a href="https://github.com/bhxuk/Plex_burner">GitHub</a><a href="dashboard">Dashboard</a></nav>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <h1>Rip your DVDs straight into Plex.</h1>
+    <p>Insert a disc, name it, and Plex Burner copies it into your media folder, then ejects it so the next one can go in. Runs in Docker on your own network.</p>
+    <a class="btn primary" href="dashboard">Open the dashboard</a>
+    <a class="btn" href="https://github.com/bhxuk/Plex_burner">View on GitHub</a>
+  </section>
+
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="card"><b>1. Insert a disc</b>Plex Burner detects it and reads the title.</div>
+    <div class="card"><b>2. Name it</b>The title is pre-filled. Change it, or wait and it starts on its own.</div>
+    <div class="card"><b>3. Copy</b>DVDs become a folder Plex plays directly. Data discs become an ISO.</div>
+    <div class="card"><b>4. Eject</b>The disc pops out when it's done, ready for the next one.</div>
+  </div>
+
+  <h2>Install with Docker</h2>
+  <pre><code>git clone https://github.com/bhxuk/Plex_burner
+cd Plex_burner
+sh scripts/update.sh</code></pre>
+  <p class="muted">Then open <code>http://&lt;server-ip&gt;:9000</code>. Set <code>MEDIA_HOST_DIR</code> and <code>PB_HOST_DIR</code> if your folders differ from the defaults in <code>docker-compose.yml</code>.</p>
+
+  <h2>Updates</h2>
+  <p>The dashboard checks GitHub for new commits. The <b>Update now</b> button pulls the latest code and rebuilds the container, and the changelog shows what changed.</p>
+
+  <h2>Changelog</h2>
+  <div class="changelog">{{ changelog_html|safe }}</div>
+
+  <footer>Plex Burner {{ version }} ({{ commit }}). Made for personal backups of discs you own.</footer>
+</div>
+</body>
+</html>

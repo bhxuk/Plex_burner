@@ -1,0 +1,28 @@
+name: plex-burner
+
+services:
+  plex-burner:
+    build:
+      context: .
+      args:
+        APP_COMMIT: ${APP_COMMIT:-unknown}
+    image: plex-burner:latest
+    container_name: plex-burner
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    devices:
+      - /dev/sr0:/dev/sr0
+    environment:
+      APP_COMMIT: ${APP_COMMIT:-unknown}
+      MEDIA_DIR: /media
+      DISC_DEVICE: /dev/sr0
+      AUTO_START_SECONDS: ${AUTO_START_SECONDS:-120}
+      GITHUB_REPO: bhxuk/Plex_burner
+      PB_HOST_DIR: ${PB_HOST_DIR:-/home/bhxuk/Plex_burner}
+      PB_IMAGE: plex-burner:latest
+    volumes:
+      # Where copied discs are saved. Plex should point a library at this folder.
+      - ${MEDIA_HOST_DIR:-/home/bhxuk/data/media/movies}:/media
+      # Lets the Update button rebuild the container.
+      - /var/run/docker.sock:/var/run/docker.sock

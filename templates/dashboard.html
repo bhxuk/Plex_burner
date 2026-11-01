@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plex Burner</title>
+<style>
+  :root { --bg:#f6f8fa; --card:#fff; --text:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#e5a00d; --ok:#1a7f37; --bad:#cf222e; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#e5a00d; --ok:#3fb950; --bad:#f85149; }
+  }
+  :root[data-theme="dark"] { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#e5a00d; --ok:#3fb950; --bad:#f85149; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; gap:8px; }
+  header a { color:var(--text); text-decoration:none; font-weight:600; }
+  header nav a { color:var(--muted); font-weight:400; margin-left:14px; }
+  main { max-width:900px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  h2 { margin:0 0 8px; font-size:17px; }
+  .muted { color:var(--muted); }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; border:1px solid var(--line); font-size:13px; text-transform:capitalize; }
+  .bar { height:10px; background:var(--line); border-radius:6px; overflow:hidden; margin:10px 0; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .5s; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  input[type=text] { flex:1; min-width:220px; padding:8px 10px; border-radius:6px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; }
+  button { padding:8px 14px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--text); font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#111; font-weight:600; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px; max-height:260px; overflow:auto; font-size:13px; white-space:pre-wrap; }
+  .changelog h3 { font-size:15px; margin:14px 0 4px; }
+  .changelog ul { margin:0 0 6px 18px; padding:0; }
+  @media (max-width: 600px) { main { padding:12px; } }
+</style>
+</head>
+<body>
+<header>
+  <a href="./">Plex Burner</a>
+  <nav><a href="./">Home</a><a href="https://github.com/bhxuk/Plex_burner">GitHub</a></nav>
+</header>
+<main>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2>Disc</h2>
+      <span id="badge" class="badge">idle</span>
+    </div>
+    <p id="message" class="muted">Loading...</p>
+    <div class="bar"><div id="progress"></div></div>
+    <div id="nameRow" class="row" hidden>
+      <input id="name" type="text" maxlength="120" placeholder="Movie name, e.g. Heat (1995)">
+      <button id="start" class="primary">Copy disc</button>
+    </div>
+    <div class="row">
+      <button id="eject">Eject disc</button>
+      <span class="muted" id="paths"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <pre id="log">No activity yet.</pre>
+  </section>
+
+  <section class="card">
+    <h2>Update</h2>
+    <p id="updateInfo" class="muted">Running version {{ version }} ({{ commit }}).</p>
+    <div class="row">
+      <button id="check">Check for updates</button>
+      <button id="apply" class="primary" disabled>Update now</button>
+    </div>
+    <pre id="updateLog" hidden></pre>
+  </section>
+
+  <section class="card changelog">
+    <h2>Changelog</h2>
+    {{ changelog_html|safe }}
+  </section>
+
+</main>
+<script>
+const $ = (sel) => document.querySelector(sel);
+let lastSuggested = null;
+let lastStatus = null;
+
+function render(s) {
+  $('#badge').textContent = s.status.replace('_', ' ');
+  $('#message').textContent = s.message;
+  $('#progress').style.width = (s.progress || 0) + '%';
+  $('#paths').textContent = 'Device ' + s.device + ' → ' + s.media_dir;
+  $('#log').textContent = s.log.join('\n') || 'No activity yet.';
+  $('#log').scrollTop = $('#log').scrollHeight;
+
+  const waiting = s.status === 'waiting_name';
+  const canStart = waiting || s.status === 'error';
+  $('#nameRow').hidden = !canStart;
+  if (canStart && (s.suggested !== lastSuggested || lastStatus !== s.status)) {
+    $('#name').value = s.suggested || '';
+    lastSuggested = s.suggested;
+  }
+  $('#start').disabled = !canStart;
+  $('#eject').disabled = s.status === 'ripping';
+  lastStatus = s.status;
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('api/status');
+    render(await res.json());
+  } catch (e) {
+    $('#message').textContent = 'Lost connection to Plex Burner. Retrying...';
+  }
+}
+
+$('#start').addEventListener('click', async () => {
+  const name = $('#name').value.trim();
+  const res = await fetch('api/rip', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})});
+  const data = await res.json();
+  if (!data.ok) alert(data.message);
+  refresh();
+});
+
+$('#eject').addEventListener('click', async () => {
+  const res = await fetch('api/eject', {method: 'POST'});
+  const data = await res.json();
+  if (!data.ok) alert(data.message);
+  refresh();
+});
+
+$('#check').addEventListener('click', async () => {
+  $('#updateInfo').textContent = 'Checking GitHub...';
+  const res = await fetch('api/update/check');
+  const d = await res.json();
+  if (!d.ok) { $('#updateInfo').textContent = d.message; return; }
+  if (d.update_available) {
+    $('#updateInfo').textContent = 'Update available: ' + d.latest + ' - ' + d.latest_message + ' (you have ' + d.current + ')';
+    $('#apply').disabled = false;
+  } else {
+    $('#updateInfo').textContent = 'You are up to date (' + d.current + ').';
+    $('#apply').disabled = true;
+  }
+});
+
+$('#apply').addEventListener('click', async () => {
+  if (!confirm('Update Plex Burner now? The page will reload when it finishes.')) return;
+  $('#apply').disabled = true;
+  const res = await fetch('api/update/apply', {method: 'POST'});
+  const d = await res.json();
+  if (!d.ok) { alert(d.message); $('#apply').disabled = false; return; }
+  $('#updateLog').hidden = false;
+  pollUpdate();
+});
+
+async function pollUpdate() {
+  try {
+    const res = await fetch('api/update/status');
+    const d = await res.json();
+    $('#updateLog').textContent = d.log || 'Starting...';
+    if (d.state === 'running') return setTimeout(pollUpdate, 3000);
+    if (d.state === 'exited' && d.exit_code === 0) {
+      $('#updateInfo').textContent = 'Update finished. Reloading...';
+      return setTimeout(() => location.reload(), 4000);
+    }
+    $('#updateInfo').textContent = 'Update failed. See the log below.';
+  } catch (e) {
+    // The app restarts during the update, so keep polling until it is back.
+    $('#updateInfo').textContent = 'Updating, waiting for Plex Burner to come back...';
+    return setTimeout(() => location.reload(), 8000);
+  }
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
