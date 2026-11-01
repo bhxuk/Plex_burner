@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plex Burner</title>
+<meta name="description" content="A self-hosted Docker app that copies your DVDs into Plex, names them, and ejects the disc for the next one.">
+<style>
+  :root {
+    --bg:#ffffff; --bg2:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#59636e; --line:#d1d9e0;
+    --accent:#e5a00d; --accent-ink:#1a1300; --link:#0969da; --ok:#1a7f37; --code:#f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#0d1117; --bg2:#010409; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d;
+      --accent:#e5a00d; --accent-ink:#1a1300; --link:#4493f8; --ok:#3fb950; --code:#161b22;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#0d1117; --bg2:#010409; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d;
+    --accent:#e5a00d; --accent-ink:#1a1300; --link:#4493f8; --ok:#3fb950; --code:#161b22;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  a { color:var(--link); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  code, pre { font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+  .wrap { max-width:1040px; margin:0 auto; padding:0 16px; }
+
+  header { position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  header .wrap { display:flex; align-items:center; justify-content:space-between; height:60px; gap:12px; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; color:var(--text); font-size:17px; }
+  .brand:hover { text-decoration:none; }
+  .logo { width:28px; height:28px; border-radius:50%; background:var(--accent); display:grid; place-items:center; }
+  .logo span { width:10px; height:10px; border-radius:50%; background:var(--bg); }
+  nav { display:flex; gap:18px; font-size:15px; }
+  nav a { color:var(--muted); }
+  @media (max-width:640px) { nav .hide-sm { display:none; } }
+
+  .hero { padding:72px 0 40px; display:grid; grid-template-columns:1.05fr 1fr; gap:40px; align-items:center; }
+  @media (max-width:860px) { .hero { grid-template-columns:1fr; padding-top:44px; } }
+  .eyebrow { display:inline-block; font-size:13px; font-weight:600; color:var(--accent); border:1px solid var(--line); border-radius:999px; padding:3px 12px; margin-bottom:16px; }
+  h1 { font-size:clamp(32px,5vw,50px); line-height:1.08; margin:0 0 16px; letter-spacing:-0.02em; }
+  .lead { font-size:18px; color:var(--muted); margin:0 0 26px; max-width:34em; }
+  .btns { display:flex; gap:10px; flex-wrap:wrap; }
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); font-weight:600; font-size:15px; cursor:pointer; }
+  .btn:hover { text-decoration:none; border-color:var(--muted); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .btn.primary:hover { filter:brightness(1.06); }
+
+  /* Mock of the real dashboard */
+  .mock { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; box-shadow:0 18px 50px -20px rgba(0,0,0,.45); }
+  .mock-bar { display:flex; align-items:center; gap:6px; padding:10px 12px; border-bottom:1px solid var(--line); background:var(--bg2); }
+  .mock-bar i { width:10px; height:10px; border-radius:50%; background:var(--line); display:block; }
+  .mock-bar .url { margin-left:10px; flex:1; font-size:12px; color:var(--muted); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:3px 10px; font-family:ui-monospace,Consolas,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mock-body { padding:16px; display:grid; gap:12px; }
+  .mock-card { border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .mock-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .mock-title { font-weight:700; font-size:15px; }
+  .pill { font-size:12px; padding:2px 10px; border-radius:999px; border:1px solid var(--line); color:var(--ok); }
+  .mock-msg { font-size:13px; color:var(--muted); margin:6px 0 10px; }
+  .bar { height:8px; border-radius:6px; background:var(--line); overflow:hidden; }
+  .bar div { height:100%; width:0; background:var(--accent); animation:fill 6s ease-in-out infinite; }
+  @keyframes fill { 0%{width:4%} 80%{width:96%} 100%{width:96%} }
+  @media (prefers-reduced-motion: reduce) { .bar div { animation:none; width:62%; } }
+  .mock-input { display:flex; gap:8px; margin-top:10px; }
+  .mock-input span { flex:1; font-size:13px; border:1px solid var(--line); border-radius:6px; padding:6px 10px; color:var(--text); }
+  .mock-input b { font-size:13px; background:var(--accent); color:var(--accent-ink); border-radius:6px; padding:6px 12px; }
+  .mock-log { font:12px/1.5 ui-monospace,Consolas,monospace; color:var(--muted); background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:10px; white-space:pre; overflow:hidden; }
+
+  section { padding:44px 0; }
+  h2 { font-size:28px; margin:0 0 8px; letter-spacing:-0.01em; }
+  .sub { color:var(--muted); margin:0 0 26px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:16px; }
+  .card p { margin:0; color:var(--muted); font-size:15px; }
+  .num { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; background:var(--accent); color:var(--accent-ink); font-weight:700; font-size:13px; margin-bottom:10px; }
+
+  .open { display:grid; grid-template-columns:1fr auto; gap:10px; max-width:560px; }
+  @media (max-width:520px) { .open { grid-template-columns:1fr; } }
+  .open input { padding:11px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); font:15px ui-monospace,Consolas,monospace; min-width:0; }
+  .hint { font-size:14px; color:var(--muted); margin-top:10px; }
+
+  pre { background:var(--code); border:1px solid var(--line); border-radius:10px; padding:16px; overflow:auto; font-size:14px; line-height:1.55; margin:0; }
+  .cmt { color:var(--muted); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:860px) { .two { grid-template-columns:1fr; } }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  td code { font-size:13px; }
+
+  .changelog h3 { font-size:16px; margin:18px 0 6px; }
+  .changelog h3:first-child { margin-top:0; }
+  .changelog ul { margin:0 0 6px 20px; padding:0; color:var(--muted); }
+  .commit { font-size:14px; color:var(--muted); margin-bottom:14px; }
+
+  footer { border-top:1px solid var(--line); padding:26px 0 40px; color:var(--muted); font-size:14px; margin-top:20px; }
+  footer .wrap { display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#"><span class="logo"><span></span></span>Plex Burner</a>
+    <nav>
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#install">Install</a>
+      <a href="#open">Open dashboard</a>
+      <a href="https://github.com/bhxuk/Plex_burner">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <div>
+      <span class="eyebrow">Self-hosted · Docker · Port 9000</span>
+      <h1>Rip your DVD shelf straight into Plex.</h1>
+      <p class="lead">Insert a disc, give it a name, and Plex Burner copies it into your Plex library, then ejects it so the next one can go in. It runs as a Docker container on your own server, and you control it from any browser on your network.</p>
+      <div class="btns">
+        <a class="btn primary" href="#open">Open my dashboard</a>
+        <a class="btn" href="#install">Install with Docker</a>
+        <a class="btn" href="https://github.com/bhxuk/Plex_burner">View source</a>
+      </div>
+    </div>
+
+    <div class="mock" aria-label="Preview of the Plex Burner dashboard">
+      <div class="mock-bar"><i></i><i></i><i></i><span class="url">http://192.168.0.150:9000/dashboard</span></div>
+      <div class="mock-body">
+        <div class="mock-card">
+          <div class="mock-row"><span class="mock-title">Disc</span><span class="pill">ripping</span></div>
+          <div class="mock-msg">Copying 'Heat (1995)'...</div>
+          <div class="bar"><div></div></div>
+          <div class="mock-input"><span>Heat (1995)</span><b>Copy disc</b></div>
+        </div>
+        <div class="mock-log">21:38:40  Detected dvd disc, suggested name 'Heat'
+21:38:52  Copying 'Heat (1995)' (dvd)
+21:52:10  Saved to /media/Heat (1995)
+21:52:12  Disc ejected</div>
+      </div>
+    </div>
+  </div>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <p class="sub">One disc at a time, with as little clicking as possible.</p>
+    <div class="grid">
+      <div class="card"><span class="num">1</span><h3>Insert a disc</h3><p>Plex Burner watches the drive and reads the disc title as soon as it's loaded.</p></div>
+      <div class="card"><span class="num">2</span><h3>Name it</h3><p>The title is pre-filled. Type the movie name and year, or leave it and it starts on its own after two minutes.</p></div>
+      <div class="card"><span class="num">3</span><h3>Copy</h3><p>DVDs are saved as a <code>VIDEO_TS</code> folder that Plex and VLC play directly. Data discs are saved as an ISO.</p></div>
+      <div class="card"><span class="num">4</span><h3>Eject and repeat</h3><p>The tray opens when the copy is done, ready for the next disc in your collection.</p></div>
+    </div>
+  </section>
+
+  <section id="open">
+    <h2>Open your dashboard</h2>
+    <p class="sub">The dashboard runs on your own server, so it only opens from your home network.</p>
+    <form class="open" id="openForm">
+      <input id="addr" type="text" value="192.168.0.150:9000" aria-label="Server address and port" spellcheck="false">
+      <button class="btn primary" type="submit">Open dashboard</button>
+    </form>
+    <p class="hint">Enter your server's address and port. This page remembers it in your browser for next time.</p>
+  </section>
+
+  <section id="install">
+    <h2>Install with Docker</h2>
+    <p class="sub">On a Linux server with Docker, Docker Compose and a DVD drive at <code>/dev/sr0</code>.</p>
+    <div class="two">
+      <pre><span class="cmt"># 1. Get the code</span>
+git clone https://github.com/bhxuk/Plex_burner
+cd Plex_burner
+
+<span class="cmt"># 2. Build and start it</span>
+sh scripts/update.sh
+
+<span class="cmt"># 3. Open it</span>
+http://&lt;server-ip&gt;:9000</pre>
+      <div class="card">
+        <h3>Settings</h3>
+        <p style="margin-bottom:10px">Set these before step 2 if your folders differ from the defaults.</p>
+        <table>
+          <tr><th>Variable</th><th>Default</th></tr>
+          <tr><td><code>MEDIA_HOST_DIR</code></td><td><code>/home/bhxuk/data/media/movies</code></td></tr>
+          <tr><td><code>PB_HOST_DIR</code></td><td><code>/home/bhxuk/Plex_burner</code></td></tr>
+          <tr><td><code>AUTO_START_SECONDS</code></td><td><code>120</code> (0 turns it off)</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="updates">
+    <h2>One-click updates</h2>
+    <p class="sub">Click <b>Check for updates</b> in the dashboard. If GitHub has a newer commit, <b>Update now</b> pulls it and rebuilds the container. The page reloads when it's done.</p>
+    <div class="card changelog">
+      <div class="commit" id="commit">Loading the latest commit...</div>
+      <div id="changelog">Loading the changelog...</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Plex Burner · For personal backups of discs you own.</span>
+    <a href="https://github.com/bhxuk/Plex_burner">github.com/bhxuk/Plex_burner</a>
+  </div>
+</footer>
+
+<script>
+  const REPO = 'bhxuk/Plex_burner';
+
+  // Remember the server address in this browser only.
+  const addr = document.getElementById('addr');
+  try { const saved = localStorage.getItem('pb-addr'); if (saved) addr.value = saved; } catch (e) {}
+  document.getElementById('openForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    let value = addr.value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    if (!value) return;
+    if (!/:\d+$/.test(value)) value += ':9000';
+    try { localStorage.setItem('pb-addr', value); } catch (err) {}
+    window.open('http://' + value + '/dashboard', '_blank', 'noopener');
+  });
+
+  function esc(s) { return s.replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function renderChangelog(md) {
+    const out = []; let inList = false;
+    for (const raw of md.split('\n')) {
+      const line = raw.trim();
+      if (line.startsWith('- ')) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + esc(line.slice(2)) + '</li>');
+        continue;
+      }
+      if (inList) { out.push('</ul>'); inList = false; }
+      if (line.startsWith('## ')) out.push('<h3>' + esc(line.slice(3)) + '</h3>');
+      else if (line && !line.startsWith('# ')) out.push('<p>' + esc(line) + '</p>');
+    }
+    if (inList) out.push('</ul>');
+    return out.join('');
+  }
+
+  fetch('https://raw.githubusercontent.com/' + REPO + '/main/CHANGELOG.md')
+    .then((r) => r.ok ? r.text() : Promise.reject())
+    .then((md) => { document.getElementById('changelog').innerHTML = renderChangelog(md); })
+    .catch(() => { document.getElementById('changelog').innerHTML = '<a href="https://github.com/' + REPO + '/blob/main/CHANGELOG.md">Read the changelog on GitHub</a>'; });
+
+  fetch('https://api.github.com/repos/' + REPO + '/commits/main')
+    .then((r) => r.ok ? r.json() : Promise.reject())
+    .then((c) => {
+      const date = new Date(c.commit.committer.date).toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'});
+      document.getElementById('commit').innerHTML = 'Latest commit <a href="' + c.html_url + '"><code>' + c.sha.slice(0, 7) + '</code></a> · ' + esc(c.commit.message.split('\n')[0]) + ' · ' + date;
+    })
+    .catch(() => { document.getElementById('commit').textContent = ''; });
+</script>
+</body>
+</html>
