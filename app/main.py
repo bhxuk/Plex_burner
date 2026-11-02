@@ -228,6 +228,8 @@ def api_locations_edit():
                 loc["name"] = name
         if data.get("default"):
             s["destination"] = real
+        if data.get("default_tv"):
+            s["tv_destination"] = real
 
     settings.update(edit)
     return jsonify({"ok": True})
@@ -238,6 +240,8 @@ def api_locations_remove():
     real = os.path.realpath((request.get_json(silent=True) or {}).get("path", ""))
     if real == default_destination(settings.load()):
         return fail("Make another location the default before removing this one.", 409)
+    if real == settings.get("tv_destination"):
+        settings.set(tv_destination=None)
     settings.update(lambda s: s.__setitem__("locations", [loc for loc in s.get("locations", []) if loc["path"] != real]))
     library.invalidate()
     drives.events.add("-", f"Removed location {real}")

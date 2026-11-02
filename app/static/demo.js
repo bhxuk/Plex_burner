@@ -38,6 +38,7 @@
   const settings = { auto_start_seconds: 120, eject_when_done: true, output_format: "mkv" };
   let locations = [
     { path: "/srv/media/movies", name: "Movies", default: true, free: 1.42e12, total: 3.6e12 },
+    { path: "/srv/media/tv", name: "TV", default: false, tv_default: true, free: 1.42e12, total: 3.6e12 },
     { path: "/srv/media/kids", name: "Kids films", default: false, free: 1.42e12, total: 3.6e12 },
     { path: "/mnt/nas/archive", name: "NAS archive", default: false, free: 6.8e12, total: 12e12 },
   ];
@@ -127,7 +128,7 @@
     if (p === "api/library") return library;
     if (p === "api/locations" && method === "GET") return { locations: locations.map(l => ({ ...l, available: true })), roots: ["/srv/media", "/mnt"] };
     if (p === "api/locations" && method === "POST") { locations.push({ path: b.path, name: b.name || b.path.split("/").pop(), default: false, free: 1.42e12, total: 3.6e12 }); if (b.default) locations.forEach(l => l.default = l.path === b.path); return { ok: true }; }
-    if (p === "api/locations" && method === "PUT") { locations.forEach(l => { if (l.path === b.path && b.name) l.name = b.name; if (b.default) l.default = l.path === b.path; }); return { ok: true }; }
+    if (p === "api/locations" && method === "PUT") { locations.forEach(l => { if (l.path === b.path && b.name) l.name = b.name; if (b.default) l.default = l.path === b.path; if (b.default_tv) l.tv_default = l.path === b.path; }); return { ok: true }; }
     if (p === "api/locations" && method === "DELETE") { locations = locations.filter(l => l.path !== b.path); return { ok: true }; }
     if (p === "api/folders" && method === "GET") return folders(url.searchParams.get("path"));
     if (p === "api/folders") return { ok: true, path: b.path + "/" + b.name };

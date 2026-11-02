@@ -27,7 +27,7 @@ import time
 from datetime import datetime
 
 from .config import THUMB_DIR
-from .locations import allowed_dir, default_destination, give_to_user
+from .locations import allowed_dir, default_destination, give_to_user, match_show, next_episode, tv_destination
 from .media import dir_size, ffmpeg_frame, largest_vob, media_duration, run, run_stdout
 
 DISC_FRAMES = 4
@@ -264,6 +264,10 @@ class DiscWorker:
         code, _ = run(["dd", f"if={self.device}", "of=/dev/null", "bs=2048", "count=1"], timeout=30)
         return code == 0
 
+    def default_for(self, settings: dict) -> str:
+        """TV discs go to the TV folder, everything else to the film folder."""
+        return tv_destination(settings) if self.state.get("tv") else default_destination(settings)
+
     @property
     def busy(self) -> bool:
         return self.state["status"] == "copying"
@@ -274,7 +278,7 @@ class DiscWorker:
         settings = self.settings.load()
         auto = settings["auto_start_seconds"]
         if snap["status"] != "copying":
-            snap["destination"] = snap["pending_dest"] if allowed_dir(snap["pending_dest"]) else default_destination(settings)
+            snap["destination"] = snap["pending_dest"] if allowed_dir(snap["pending_dest"]) else self.default_for(settings)
             snap["format"] = settings["output_format"]
         snap["auto_start_in"] = (max(0, int(auto - (time.time() - snap["pending_since"])))
                                  if snap["status"] == "waiting" and auto else None)
@@ -416,7 +420,9 @@ class DiscWorker:
         tv = None
         if info.get("episodes"):
             show, season = parse_show(suggested)
-            tv = {"show": show, "season": season, "first_episode": 1}
+            dest = tv_destination(self.settings.load())
+            show = match_show(dest, show)
+            tv = {"show": show, "season": season, "first_episode": next_episode(dest, show, season)}
         self.set(status="waiting", disc_type=kind, disc_info=info, suggested=suggested, name=suggested, tv=tv,
                  pending_since=time.time(), message="Check the name and folder, then press Copy.")
         if tv:
@@ -448,8 +454,15 @@ class DiscWorker:
                 self.state["name"] = safe_name(name)
             if destination is not None:
                 self.state["pending_dest"] = destination if allowed_dir(destination) else None
-            if tv is not None:
-                self.state["tv"] = self.clean_tv(tv, self.state.get("tv"))
+            if tv is not None and self.state.get("tv"):
+                old = self.state["tv"]
+                new = self.clean_tv(tv, old)
+                moved = new["show"] != old["show"] or new["season"] != old["season"] or destination is not None
+                if moved and new["first_episode"] == old["first_episode"]:
+                    # A different show, season or folder: carry on from what is already there.
+                    dest = self.state["pending_dest"] or tv_destination(self.settings.load())
+                    new["first_episode"] = next_episode(dest, match_show(dest, new["show"]), new["season"])
+                self.state["tv"] = new
             self.state["pending_since"] = time.time()
 
     def tick(self) -> None:
@@ -480,7 +493,7 @@ class DiscWorker:
     # ---- copying ---------------------------------------------------------------
     def start(self, name: str, destination: str | None = None, tv: dict | None = None) -> tuple[bool, str]:
         settings = self.settings.load()
-        destination = destination or default_destination(settings)
+        destination = destination or self.default_for(settings)
         if not allowed_dir(destination):
             return False, f"Can't save to {destination}. Pick another folder."
         destination = os.path.realpath(destination)
@@ -682,7 +695,11 @@ class DiscWorker:
 
     def _place_tv(self, work: str, destination: str, tv: dict) -> str:
         """Move episodes into Show/Season NN/, joining folders made by earlier discs of the same show."""
-        season_dir = os.path.join(destination, tv["show"], f"Season {tv['season']:02d}")
+        show_dir = os.path.join(destination, match_show(destination, tv["show"]))
+        season_dir = os.path.join(show_dir, f"Season {tv['season']:02d}")
+        unpadded = os.path.join(show_dir, f"Season {tv['season']}")
+        if not os.path.isdir(season_dir) and os.path.isdir(unpadded):
+            season_dir = unpadded  # use the season folder that is already there
         os.makedirs(season_dir, exist_ok=True)
         for entry in sorted(os.listdir(work)):
             stem, ext = os.path.splitext(entry)
@@ -693,7 +710,7 @@ class DiscWorker:
                 n += 1
             os.rename(os.path.join(work, entry), target)
         os.rmdir(work)
-        give_to_user(os.path.join(destination, tv["show"]))
+        give_to_user(show_dir)
         return season_dir
 
     def _keep_failed(self, work: str, name: str, destination: str, kind: str, fmt: str, tv, error: str) -> None:

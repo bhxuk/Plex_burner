@@ -41,8 +41,52 @@ def default_destination(settings: dict) -> str:
     return MEDIA_PATHS[0]
 
 
+TV_WORDS = re.compile(r"\b(tv|television|series|shows?|episodes?)\b", re.I)
+
+
+def tv_destination(settings: dict) -> str:
+    """Where TV discs go: the location set for TV, else one called TV or Series, else the film default."""
+    dest = settings.get("tv_destination")
+    if allowed_dir(dest):
+        return os.path.realpath(dest)
+    for loc in settings.get("locations", []):
+        if allowed_dir(loc["path"]) and (TV_WORDS.search(loc.get("name", "")) or TV_WORDS.search(os.path.basename(loc["path"]))):
+            return os.path.realpath(loc["path"])
+    return default_destination(settings)
+
+
+def _key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"^(the|a|an)\s+", "", name.lower()))
+
+
+def match_show(destination: str, show: str) -> str:
+    """An existing show folder that is the same show ('Simpsons' finds 'The Simpsons'), or the name as given."""
+    try:
+        folders = [e.name for e in os.scandir(destination) if e.is_dir() and not e.name.startswith(".")]
+    except OSError:
+        return show
+    want = _key(show)
+    return next((f for f in folders if _key(f) == want), show)
+
+
+def next_episode(destination: str, show: str, season: int) -> int:
+    """The episode after the highest one already in Show/Season NN, so disc 2 carries on from disc 1."""
+    highest = 0
+    for folder in (f"Season {season:02d}", f"Season {season}"):
+        try:
+            names = os.listdir(os.path.join(destination, show, folder))
+        except OSError:
+            continue
+        for name in names:
+            m = re.search(r"S(\d+)E(\d+)", name, re.I)
+            if m and int(m.group(1)) == season:
+                highest = max(highest, int(m.group(2)))
+    return highest + 1
+
+
 def list_locations(settings: dict) -> list[dict]:
     default = default_destination(settings)
+    tv_default = tv_destination(settings)
     locations = list(settings.get("locations", []))
     if not any(loc["path"] == default for loc in locations):
         locations.insert(0, {"path": default, "name": os.path.basename(default) or default})
@@ -57,6 +101,7 @@ def list_locations(settings: dict) -> list[dict]:
             "free": free,
             "total": total,
             "default": loc["path"] == default,
+            "tv_default": loc["path"] == tv_default,
         })
     return result
 

@@ -3,6 +3,14 @@
 All notable changes to Plex Burner are listed here. The website shows this file, and the in-app
 updater checks `app/VERSION`, so every release needs an entry. Versions follow [semantic versioning](https://semver.org).
 
+## [1.4.1] - 2026-11-02
+
+### Fixed
+- **TV discs went to the film folder.** TV series now go to their own TV location and films to the film location. A location called TV or Series is used for TV automatically, or pick one with **Use for TV** on the Locations tab
+- **Disc 2 of a season started again at episode 1.** Episode numbers now carry on from the episodes already in that season's folder
+- **Show names didn't match existing folders.** A disc called "Simpsons" now goes into your existing "The Simpsons" folder instead of making a second show
+- Episodes go into an existing `Season 2` folder rather than making a new `Season 02` next to it
+
 ## [1.4.0] - 2026-11-01
 
 ### Added

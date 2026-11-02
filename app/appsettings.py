@@ -13,7 +13,8 @@ DEFAULTS = {
     "auto_start_seconds": 120,   # 0 waits for you to press Copy
     "eject_when_done": True,
     "output_format": "mkv",      # mkv (original quality), mp4 (converted), folder (full disc backup)
-    "destination": None,         # default save folder, None means the first media path
+    "destination": None,         # default save folder for films, None means the first media path
+    "tv_destination": None,      # default save folder for TV discs, None means a location called TV or Series
     "locations": [],             # [{"path": ..., "name": ...}]
     "history": [],               # newest first
     "failed": [],                # failed copies kept for fixing, newest first

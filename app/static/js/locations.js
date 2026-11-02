@@ -7,11 +7,11 @@ function renderLocations() {
     const used = l.total ? (l.total - l.free) / l.total * 100 : 0;
     const fits = l.free != null ? Math.floor(l.free / DVD_SIZE) : null;
     return `<div class="panel loc ${l.default ? "def" : ""}" data-path="${esc(l.path)}">
-      <div class="top-row"><span class="nm" title="${esc(l.name)}">${esc(l.name)}</span>${l.default ? `<span class="chip acc">default</span>` : ""}${l.available ? "" : `<span class="chip red">not available</span>`}</div>
+      <div class="top-row"><span class="nm" title="${esc(l.name)}">${esc(l.name)}</span>${l.default ? `<span class="chip acc">films</span>` : ""}${l.tv_default ? `<span class="chip violet">TV</span>` : ""}${l.available ? "" : `<span class="chip red">not available</span>`}</div>
       <div class="path">${esc(l.path)}</div>
       <div class="bar"><i style="width:${used.toFixed(1)}%;background:${used > 90 ? "var(--red)" : used > 75 ? "var(--amber)" : "var(--acc)"}"></i></div>
       <div class="nums"><div><span>Free</span><b>${fmtBytes(l.free)}</b></div><div><span>Disk size</span><b>${fmtBytes(l.total)}</b></div><div><span>Room for</span><b>${fits == null ? "-" : "~" + fits + " DVDs"}</b></div></div>
-      <div class="actions">${l.default ? "" : `<button class="btn sm" data-act="default">Make default</button>`}<button class="btn sm" data-act="rename">Rename</button><button class="btn sm" data-act="browse">Browse</button>${l.default ? "" : `<button class="btn sm danger" data-act="remove">Remove</button>`}</div>
+      <div class="actions">${l.default ? "" : `<button class="btn sm" data-act="default">Use for films</button>`}${l.tv_default ? "" : `<button class="btn sm" data-act="tv">Use for TV</button>`}<button class="btn sm" data-act="rename">Rename</button><button class="btn sm" data-act="browse">Browse</button>${l.default ? "" : `<button class="btn sm danger" data-act="remove">Remove</button>`}</div>
     </div>`;
   }).join("") || `<div class="panel empty">No locations yet.</div>`;
   $("#locRoots").innerHTML = `Plex Burner can save inside these folders on the server: ${(state.roots || []).map(r => `<code>${esc(r)}</code>`).join(", ")}. Add more with <code>MEDIA_PATH</code> and <code>EXTRA_PATH</code> in <code>.env</code>.`;
@@ -25,7 +25,8 @@ $("#locList").addEventListener("click", async e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const path = b.closest(".loc").dataset.path, loc = state.locations.find(l => l.path === path);
   try {
-    if (b.dataset.act === "default") { await api("api/locations", { method: "PUT", json: { path, default: true } }); toast(`New discs go to ${loc.name}`); }
+    if (b.dataset.act === "default") { await api("api/locations", { method: "PUT", json: { path, default: true } }); toast(`Films go to ${loc.name}`); }
+    if (b.dataset.act === "tv") { await api("api/locations", { method: "PUT", json: { path, default_tv: true } }); toast(`TV discs go to ${loc.name}`); }
     if (b.dataset.act === "rename") {
       const name = await dialog("Rename location", `<div class="field"><label>Name</label><input class="input" id="locName" value="${esc(loc.name)}"></div>`,
         [{ label: "Cancel", value: null }, { label: "Save", cls: "primary", action: body => $("#locName", body).value.trim() || false }]);
