@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import ast
 import glob
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -56,6 +58,11 @@ def unique_path(path: str) -> str:
         candidate = f"{path} ({n})"
         n += 1
     return candidate
+
+
+def fingerprint(parts) -> str:
+    """A short ID for a disc, the same every time the same disc goes in."""
+    return hashlib.sha1(json.dumps(parts, default=str).encode("utf-8")).hexdigest()[:20]
 
 
 def parse_show(name: str) -> tuple[str, int]:
@@ -209,6 +216,8 @@ class DiscWorker:
             "output": None,
             "tray": "unknown",
             "tv": None,  # {"show", "season", "first_episode"} on TV discs
+            "already": [],  # earlier copies of this same disc
+            "auto_paused": False,  # no auto-start for a disc that was already copied
         }
 
     # ---- basics ----------------------------------------------------------------
@@ -281,7 +290,7 @@ class DiscWorker:
             snap["destination"] = snap["pending_dest"] if allowed_dir(snap["pending_dest"]) else self.default_for(settings)
             snap["format"] = settings["output_format"]
         snap["auto_start_in"] = (max(0, int(auto - (time.time() - snap["pending_since"])))
-                                 if snap["status"] == "waiting" and auto else None)
+                                 if snap["status"] == "waiting" and auto and not snap["auto_paused"] else None)
         snap.update(device=self.device, drive=self.name, model=self.model, connected=self.connected)
         return snap
 
@@ -336,6 +345,8 @@ class DiscWorker:
             return "unsupported", "", {}
         info = {"filesystem": fstype}
         info.update(self.read_data_listing())
+        _, uuid = run(["blkid", "-o", "value", "-s", "UUID", self.device])
+        info["fingerprint"] = fingerprint(["data", uuid, label, self.sectors(), info.get("files"), info.get("video_bytes")])
         return "data", tidy_title(label) or datetime.now().strftime("Disc %Y-%m-%d"), info
 
     def read_dvd_info(self) -> dict:
@@ -380,6 +391,10 @@ class DiscWorker:
             "subtitles": unique(s.get("language") or s.get("langcode") for s in main.get("subp", [])),
             "episodes": [{"title": t["ix"], "duration": round(t.get("length", 0)),
                           "chapters": len(t.get("chapter", []))} for t in episodes],
+            # Same pressing, same fingerprint: titles, lengths and where each piece sits on the disc.
+            "fingerprint": fingerprint(["dvd", data.get("title")] + [
+                [t.get("ix"), round(t.get("length", 0), 1), t.get("vts"),
+                 [(c.get("first_sector"), c.get("last_sector")) for c in t.get("cell", [])]] for t in tracks]),
         }
 
     def read_data_listing(self) -> dict:
@@ -423,13 +438,28 @@ class DiscWorker:
             dest = tv_destination(self.settings.load())
             show = match_show(dest, show)
             tv = {"show": show, "season": season, "first_episode": next_episode(dest, show, season)}
+        already = self.find_earlier_copies(info.get("fingerprint"))
+        paused = any(c["exists"] for c in already)
+        if paused:
+            last = next(c for c in already if c["exists"])
+            message = (f"Already copied on {datetime.fromtimestamp(last['date']):%d %b %Y} as '{last['name']}'. "
+                       "Auto-start is paused for this disc. Press Copy again if you want another copy.")
+        else:
+            message = "Check the name and folder, then press Copy."
         self.set(status="waiting", disc_type=kind, disc_info=info, suggested=suggested, name=suggested, tv=tv,
-                 pending_since=time.time(), message="Check the name and folder, then press Copy.")
+                 pending_since=time.time(), message=message, already=already, auto_paused=paused)
         if tv:
             what = f"TV DVD with {len(info['episodes'])} episodes"
         else:
             what = "DVD" if kind == "dvd" else f"data disc with {info.get('videos', 0)} video file(s)"
-        self.log(f"Detected {what} '{suggested}'")
+        self.log(f"Detected {what} '{suggested}'" + (", already copied before" if paused else ""))
+
+    def find_earlier_copies(self, fp: str | None) -> list[dict]:
+        """Earlier copies of this exact disc, newest first, and whether their files are still there."""
+        if not fp:
+            return []
+        return [{"name": h["name"], "path": h["path"], "date": h["date"], "exists": os.path.exists(h["path"])}
+                for h in self.settings.get("history") if h.get("fingerprint") == fp][:5]
         if kind == "dvd":
             threading.Thread(target=self.make_disc_previews, args=(disc_id, info), daemon=True).start()
 
@@ -479,14 +509,14 @@ class DiscWorker:
             if status != "idle":
                 self.clear_previews()
                 self.set(status="idle", disc_type=None, disc_info={}, suggested="", name="", progress=0,
-                         previews=0, live_preview=0, pending_dest=None, tv=None)
+                         previews=0, live_preview=0, pending_dest=None, tv=None, already=[], auto_paused=False)
             self.set(message=message)
             return
         if status == "idle":
             self.detect()
             return
         auto = self.settings.get("auto_start_seconds")
-        if status == "waiting" and auto and time.time() - pending_since >= auto:
+        if status == "waiting" and auto and not self.state["auto_paused"] and time.time() - pending_since >= auto:
             self.log(f"Copying '{name}' automatically")
             self.start(name, dest)
 
@@ -758,7 +788,12 @@ class DiscWorker:
             seconds = int(time.time() - started)
             self.log(f"Saved {final} ({size / 1e9:.1f} GB in {max(1, seconds // 60)} min)")
             entry = {"name": name, "path": final, "type": kind, "format": fmt, "size": size, "seconds": seconds,
-                     "date": int(time.time()), "drive": self.name}
+                     "date": int(time.time()), "drive": self.name,
+                     "fingerprint": self.state["disc_info"].get("fingerprint")}
+            if tv:
+                first = tv["first_episode"]
+                entry["episodes"] = [f"S{tv['season']:02d}E{n:02d}"
+                                     for n in range(first, first + len(self.state["disc_info"].get("episodes", [])))]
             self.settings.update(lambda s: s.__setitem__("history", ([entry] + s.get("history", []))[:200]))
             if self.on_copied:
                 self.on_copied()

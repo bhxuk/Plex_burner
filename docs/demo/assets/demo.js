@@ -3,7 +3,7 @@
    and generated artwork in place of video frames. */
 "use strict";
 (function () {
-  const VERSION = "1.4.1";
+  const VERSION = "1.5.0";
   const T0 = Date.now() / 1000;
   const now = () => Date.now() / 1000;
   const GB = 1e9;

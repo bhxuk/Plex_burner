@@ -3,6 +3,11 @@
 All notable changes to Plex Burner are listed here. The website shows this file, and the in-app
 updater checks `app/VERSION`, so every release needs an entry. Versions follow [semantic versioning](https://semver.org).
 
+## [1.5.0] - 2026-11-02
+
+### Added
+- **Already copied?** Plex Burner recognises a disc it has copied before, even when another disc has the same label. The Disc tab says when and where it went, auto-start is paused so it isn't copied twice, and **Copy again** asks before making a second copy. This works for discs copied from this version on
+
 ## [1.4.1] - 2026-11-02
 
 ### Fixed

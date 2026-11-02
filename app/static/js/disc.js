@@ -24,6 +24,7 @@ function driveBlock(d) {
     <div class="panel">
       <h3>Disc <span class="right disc-chip"></span></h3>
       <div class="dtitle">No disc</div><div class="chips"></div><div class="dmsg"></div>
+      <div class="notice d-already" hidden style="margin:0 0 14px"></div>
       <div class="dform" hidden>
         <div class="field d-name-field"><label>Name</label>
           <input class="input d-name" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Movie Name (Year)">
@@ -66,7 +67,10 @@ function driveBlock(d) {
     destHint(name); sendPending(name);
   });
   q(".d-copy").onclick = async () => {
-    const btn = q(".d-copy"); btn.disabled = true;
+    const btn = q(".d-copy");
+    if ((driveState(name)?.already || []).some(c => c.exists) &&
+        !await confirmDanger("Copy this disc again?", "It has already been copied and those files are still there. You'll end up with a second copy.", "Copy again")) return;
+    btn.disabled = true;
     try {
       await api(`api/drive/${name}/copy`, { method: "POST", json: { name: nameInput.value.trim(), destination: dest.value === BROWSE ? null : dest.value, tv: tvValues(name) } });
       ui[name].nameDirty = false; ui[name].tvDirty = false; toast("Copy started");
@@ -263,6 +267,16 @@ function renderDrive(d) {
   $(".chips", el).innerHTML = discChips(d);
   $(".disc-chip", el).innerHTML = d.status === "copying" ? `<span class="chip acc">${d.progress}%</span>` : `<span class="chip">${esc(STATUS[d.status]?.[1] || d.status)}</span>`;
   $(".dmsg", el).textContent = d.message;
+  const before = ["waiting", "error"].includes(d.status) ? (d.already || []) : [];
+  const kept = before.filter(c => c.exists);
+  const box = $(".d-already", el);
+  box.hidden = !before.length;
+  box.className = "notice d-already " + (kept.length ? "info" : "");
+  box.innerHTML = !before.length ? "" : (kept.length
+    ? `<b>This disc has been copied before.</b> Auto-start is paused so it isn't copied twice.`
+    : `This disc was copied before, but those files are no longer there.`) +
+    `<ul style="margin:6px 0 0;padding-left:18px">${before.map(c => `<li>${esc(fmtDate(c.date))}: ${esc(c.name)} <span style="opacity:.75">${esc(c.path)}${c.exists ? "" : " (gone)"}</span></li>`).join("")}</ul>`;
+  $(".d-copy", el).textContent = kept.length ? "Copy again" : "Copy disc";
   renderForm(d); renderProgress(d);
   const cd = $(".countdown", el);
   cd.hidden = d.auto_start_in == null;
